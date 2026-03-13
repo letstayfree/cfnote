@@ -79,9 +79,10 @@ export default function Layout({ token, username, onLogout }: Props) {
       content: '',
     })
     if (res.ok && res.data) {
-      await loadArticles(activeNotebook.id)
-      await loadNotebooks()
       setActiveArticle(res.data)
+      // Refresh lists in background, concurrently
+      loadArticles(activeNotebook.id)
+      loadNotebooks()
     }
   }
 
@@ -90,7 +91,7 @@ export default function Layout({ token, username, onLogout }: Props) {
     const res = await put<Article>(`/articles/${id}`, data)
     if (res.ok && res.data) {
       setActiveArticle(res.data)
-      if (activeNotebook) await loadArticles(activeNotebook.id)
+      if (activeNotebook) loadArticles(activeNotebook.id)
     }
     return res
   }
@@ -101,8 +102,9 @@ export default function Layout({ token, username, onLogout }: Props) {
     if (res.ok) {
       if (activeArticle?.id === id) setActiveArticle(null)
       if (activeNotebook) {
-        await loadArticles(activeNotebook.id)
-        await loadNotebooks()
+        // Parallel refresh
+        loadArticles(activeNotebook.id)
+        loadNotebooks()
       }
     }
     return res
