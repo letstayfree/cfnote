@@ -5,7 +5,7 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "cfnote-db"
-database_id = "placeholder-replace-after-creation"
+database_id = "3abd7367-e382-41d4-9539-a8db0b368208"
 
 [[vectorize]]
 binding = "VECTORIZE"

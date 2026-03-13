@@ -22,6 +22,7 @@ export function generateSalt(): string {
 // ---- JWT (HMAC-SHA256) ----
 
 export async function createJWT(payload: Record<string, unknown>, secret: string): Promise<string> {
+  if (!secret) throw new Error('JWT_SECRET 未配置，请在 Cloudflare Pages 环境变量中设置')
   const header = { alg: 'HS256', typ: 'JWT' }
   const now = Math.floor(Date.now() / 1000)
   const fullPayload = { ...payload, iat: now, exp: now + 7 * 24 * 3600 }

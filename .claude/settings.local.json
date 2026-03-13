@@ -9,7 +9,8 @@
       "Bash(cd \"D:/Projects/CF/cfnote\" && npm install -D vite @vitejs/plugin-react typescript @types/react @types/react-dom @types/marked tailwindcss @tailwindcss/vite wrangler @cloudflare/workers-types 2>&1)",
       "Bash(cd \"D:/Projects/CF/cfnote\" && npm install -D vite@6 @vitejs/plugin-react@4 typescript @types/react @types/react-dom @types/marked tailwindcss@4 @tailwindcss/vite@4 wrangler @cloudflare/workers-types 2>&1)",
       "Bash(cd \"D:/Projects/CF/cfnote\" && npx tsc --noEmit 2>&1)",
-      "Bash(cd \"D:/Projects/CF/cfnote\" && npx vite build 2>&1)"
+      "Bash(cd \"D:/Projects/CF/cfnote\" && npx vite build 2>&1)",
+      "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(32\\).toString\\('hex'\\)\\)\")"
     ]
   }
 }
