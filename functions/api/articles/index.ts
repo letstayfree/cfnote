@@ -10,7 +10,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     }>()
     if (!notebook_id || !title?.trim()) return err('笔记本ID和标题不能为空')
 
-    // Verify notebook belongs to user
     const nb = await env.DB.prepare('SELECT id FROM notebooks WHERE id = ? AND user_id = ?')
       .bind(notebook_id, user.id).first()
     if (!nb) return err('笔记本不存在', 404)
@@ -22,19 +21,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
 
     const articleId = result.meta.last_row_id
 
-    // Update notebook article count
     await env.DB.prepare(
       'UPDATE notebooks SET article_count = article_count + 1, updated_at = datetime(\'now\') WHERE id = ?'
     ).bind(notebook_id).run()
 
-    // Vectorize if content is non-empty
-    let vectorizeError: string | null = null
+    let vectorize_error: string | null = null
     if (content && content.trim().length > 0) {
-      vectorizeError = await vectorizeArticle(env, articleId as number, user.id, notebook_id, title.trim(), content)
+      vectorize_error = await vectorizeArticle(env, articleId as number, user.id, notebook_id, title.trim(), content)
     }
 
     const article = await env.DB.prepare('SELECT * FROM articles WHERE id = ?').bind(articleId).first()
-    return ok({ ...article as any, vectorize_error: vectorizeError })
+    return ok({ ...article as any, vectorize_error })
   } catch (e: any) {
     return err('创建失败: ' + e.message, 500)
   }
@@ -47,16 +44,23 @@ async function vectorizeArticle(
   try {
     const chunks = chunkText(title + '\n' + content)
 
-    // Batch embed all chunks
+    // Embed all chunks
     const embedResult: any = await env.AI.run('@cf/baai/bge-m3' as any, { text: chunks })
-    const vectors = embedResult.data as number[][]
+
+    // Workers AI embedding response: { shape: [n, dim], data: [[...], ...] }
+    const vectors = embedResult?.data as number[][] | undefined
 
     if (!vectors || vectors.length === 0) {
-      return '嵌入模型未返回向量数据'
+      return `嵌入模型未返回向量数据, response keys: ${Object.keys(embedResult || {}).join(',')}`
     }
 
     if (vectors.length !== chunks.length) {
       return `向量数量(${vectors.length})与分块数量(${chunks.length})不匹配`
+    }
+
+    const dims = vectors[0].length
+    if (dims === 0) {
+      return '嵌入模型返回了空向量(0维)'
     }
 
     // Prepare Vectorize upsert and D1 chunk records
@@ -76,8 +80,10 @@ async function vectorizeArticle(
       )
     }
 
-    // Upsert vectors
-    await env.VECTORIZE.upsert(vectorEntries)
+    // Upsert vectors and check result
+    const upsertResult = await env.VECTORIZE.upsert(vectorEntries)
+    // Log upsert result for debugging
+    console.log(`Vectorize upsert for article ${articleId}: ${JSON.stringify(upsertResult)}, dims=${dims}, chunks=${chunks.length}`)
 
     // Batch insert chunk records + mark article as vectorized
     await env.DB.batch([

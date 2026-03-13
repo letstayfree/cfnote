@@ -10,24 +10,34 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
 
     // Embed the query
     const embedResult: any = await env.AI.run('@cf/baai/bge-m3' as any, { text: [query.trim()] })
-    const queryVector = embedResult.data[0] as number[]
+    const queryVector = embedResult?.data?.[0] as number[] | undefined
 
     if (!queryVector || queryVector.length === 0) {
-      return err('查询向量生成失败', 500)
+      return err(`查询向量生成失败, response keys: ${Object.keys(embedResult || {}).join(',')}`, 500)
     }
 
-    // Search Vectorize with metadata filter
+    // Search Vectorize — try with filter, fallback to no filter
     const filter: Record<string, number> = { user_id: user.id }
     if (notebook_id) filter.notebook_id = notebook_id
 
-    const matches = await env.VECTORIZE.query(queryVector, {
+    let matches = await env.VECTORIZE.query(queryVector, {
       topK: 10,
       filter,
       returnMetadata: 'all',
     })
 
+    // Fallback: if filter returned nothing, retry without filter (metadata index may not exist)
+    let usedFallback = false
     if (!matches.matches || matches.matches.length === 0) {
-      return ok({ results: [] })
+      matches = await env.VECTORIZE.query(queryVector, {
+        topK: 10,
+        returnMetadata: 'all',
+      })
+      usedFallback = true
+    }
+
+    if (!matches.matches || matches.matches.length === 0) {
+      return ok({ results: [], debug: { usedFallback, vectorDims: queryVector.length } })
     }
 
     // Fetch article info and chunk texts
@@ -35,6 +45,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     for (const match of matches.matches) {
       const articleId = match.metadata?.article_id as number
       const chunkIndex = match.metadata?.chunk_index as number
+      if (!articleId && articleId !== 0) continue
 
       const article = await env.DB.prepare(
         `SELECT a.id, a.title, a.notebook_id, n.name as notebook_name
@@ -47,6 +58,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       ).bind(articleId, chunkIndex).first<{ chunk_text: string }>()
 
       if (article && chunk) {
+        // Post-filter by notebook if we used fallback
+        if (usedFallback && notebook_id && article.notebook_id !== notebook_id) continue
+
         results.push({
           article_id: article.id,
           article_title: article.title,
@@ -67,7 +81,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       }
     }
 
-    return ok({ results: [...seen.values()].sort((a, b) => b.score - a.score) })
+    return ok({
+      results: [...seen.values()].sort((a, b) => b.score - a.score),
+      debug: { usedFallback, vectorDims: queryVector.length },
+    })
   } catch (e: any) {
     return err('搜索失败: ' + e.message, 500)
   }

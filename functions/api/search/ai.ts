@@ -10,21 +10,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
 
     // 1. Embed the query
     const embedResult: any = await env.AI.run('@cf/baai/bge-m3' as any, { text: [query.trim()] })
-    const queryVector = embedResult.data[0] as number[]
+    const queryVector = embedResult?.data?.[0] as number[] | undefined
 
     if (!queryVector || queryVector.length === 0) {
-      return err('查询向量生成失败', 500)
+      return err(`查询向量生成失败, response keys: ${Object.keys(embedResult || {}).join(',')}`, 500)
     }
 
-    // 2. Search Vectorize with metadata filter
+    // 2. Search Vectorize — try with filter, fallback to no filter
     const filter: Record<string, number> = { user_id: user.id }
     if (notebook_id) filter.notebook_id = notebook_id
 
-    const matches = await env.VECTORIZE.query(queryVector, {
-      topK: 5,
+    let matches = await env.VECTORIZE.query(queryVector, {
+      topK: 10,
       filter,
       returnMetadata: 'all',
     })
+
+    let usedFallback = false
+    if (!matches.matches || matches.matches.length === 0) {
+      matches = await env.VECTORIZE.query(queryVector, {
+        topK: 10,
+        returnMetadata: 'all',
+      })
+      usedFallback = true
+    }
 
     if (!matches.matches || matches.matches.length === 0) {
       return ok({ answer: '未在知识库中找到相关内容。', sources: [] })
@@ -37,9 +46,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     for (const match of matches.matches) {
       const articleId = match.metadata?.article_id as number
       const chunkIndex = match.metadata?.chunk_index as number
+      if (!articleId && articleId !== 0) continue
 
       const article = await env.DB.prepare(
-        `SELECT a.id, a.title, n.name as notebook_name
+        `SELECT a.id, a.title, a.notebook_id, n.name as notebook_name
          FROM articles a LEFT JOIN notebooks n ON a.notebook_id = n.id
          WHERE a.id = ?`
       ).bind(articleId).first<any>()
@@ -49,6 +59,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       ).bind(articleId, chunkIndex).first<{ chunk_text: string }>()
 
       if (article && chunk) {
+        if (usedFallback && notebook_id && article.notebook_id !== notebook_id) continue
+
         contextParts.push(`[${sources.length + 1}] ${chunk.chunk_text}`)
         sources.push({
           article_id: article.id,
@@ -58,6 +70,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
           score: match.score,
         })
       }
+
+      if (sources.length >= 5) break
     }
 
     if (sources.length === 0) {
