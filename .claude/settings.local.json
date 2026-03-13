@@ -12,7 +12,8 @@
       "Bash(cd \"D:/Projects/CF/cfnote\" && npx vite build 2>&1)",
       "Bash(node -e \"console.log\\(require\\('crypto'\\).randomBytes\\(32\\).toString\\('hex'\\)\\)\")",
       "Bash(cd \"D:/Projects/CF/cfnote\" && npx tsc --noEmit 2>&1 && npx vite build 2>&1)",
-      "Bash(cd \"D:/Projects/CF/cfnote\" && npx tsc --noEmit 2>&1 && echo \"OK\")"
+      "Bash(cd \"D:/Projects/CF/cfnote\" && npx tsc --noEmit 2>&1 && echo \"OK\")",
+      "WebFetch(domain:www.npmjs.com)"
     ]
   }
 }

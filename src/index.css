@@ -1,1 +1,88 @@
 @import "tailwindcss";
+
+/* Markdown preview styles */
+.cfnote-preview h1 { font-size: 1.75em; font-weight: 700; margin: 1em 0 0.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+.cfnote-preview h2 { font-size: 1.4em; font-weight: 700; margin: 1em 0 0.4em; border-bottom: 1px solid #f3f4f6; padding-bottom: 0.2em; }
+.cfnote-preview h3 { font-size: 1.15em; font-weight: 600; margin: 0.8em 0 0.3em; }
+.cfnote-preview h4 { font-size: 1em; font-weight: 600; margin: 0.6em 0 0.2em; }
+
+.cfnote-preview code {
+  background: #f3f4f6;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  font-size: 0.875em;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.cfnote-preview pre {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 1em 0;
+  line-height: 1.6;
+}
+
+.cfnote-preview pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  color: inherit;
+  font-size: 0.85em;
+}
+
+.cfnote-preview blockquote {
+  border-left: 4px solid #10b981;
+  background: #f0fdf4;
+  padding: 0.75em 1em;
+  margin: 1em 0;
+  border-radius: 0 8px 8px 0;
+  color: #374151;
+}
+
+.cfnote-preview blockquote p { margin: 0; }
+
+.cfnote-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.9em;
+}
+
+.cfnote-preview th,
+.cfnote-preview td {
+  border: 1px solid #e5e7eb;
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+
+.cfnote-preview th {
+  background: #f9fafb;
+  font-weight: 600;
+}
+
+.cfnote-preview tr:nth-child(even) { background: #f9fafb; }
+
+.cfnote-preview hr {
+  border: none;
+  border-top: 2px solid #e5e7eb;
+  margin: 1.5em 0;
+}
+
+.cfnote-preview img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 1em 0;
+}
+
+.cfnote-preview a {
+  color: #059669;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cfnote-preview ul { list-style: disc; padding-left: 1.5em; margin: 0.5em 0; }
+.cfnote-preview ol { list-style: decimal; padding-left: 1.5em; margin: 0.5em 0; }
+.cfnote-preview li { margin: 0.25em 0; }
+.cfnote-preview p { margin: 0.5em 0; line-height: 1.75; }

@@ -4,6 +4,7 @@ import Sidebar from './Sidebar'
 import ArticleList from './ArticleList'
 import ArticleEditor from './ArticleEditor'
 import SearchPanel from './SearchPanel'
+import ImportDialog from './ImportDialog'
 import type { Notebook, Article } from '../types'
 
 interface Props {
@@ -19,9 +20,10 @@ export default function Layout({ token, username, onLogout }: Props) {
   const [articles, setArticles] = useState<Article[]>([])
   const [activeArticle, setActiveArticle] = useState<Article | null>(null)
   const [showSearch, setShowSearch] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
-  // Load notebooks
   const loadNotebooks = useCallback(async () => {
     const res = await get<Notebook[]>('/notebooks')
     if (res.ok && res.data) setNotebooks(res.data)
@@ -29,7 +31,6 @@ export default function Layout({ token, username, onLogout }: Props) {
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
 
-  // Load articles when notebook changes
   const loadArticles = useCallback(async (notebookId: number) => {
     const res = await get<Article[]>(`/notebooks/${notebookId}/articles`)
     if (res.ok && res.data) setArticles(res.data)
@@ -45,32 +46,26 @@ export default function Layout({ token, username, onLogout }: Props) {
     }
   }, [activeNotebook, loadArticles])
 
-  // Load full article detail
   const loadArticleDetail = useCallback(async (articleId: number) => {
     const res = await get<Article>(`/articles/${articleId}`)
     if (res.ok && res.data) setActiveArticle(res.data)
   }, [get])
 
-  // Create notebook
   const createNotebook = async (name: string) => {
     const res = await post<Notebook>('/notebooks', { name })
     if (res.ok) await loadNotebooks()
     return res
   }
 
-  // Delete notebook
   const deleteNotebook = async (id: number) => {
     const res = await del(`/notebooks/${id}`)
     if (res.ok) {
-      if (activeNotebook?.id === id) {
-        setActiveNotebook(null)
-      }
+      if (activeNotebook?.id === id) setActiveNotebook(null)
       await loadNotebooks()
     }
     return res
   }
 
-  // Create article
   const createArticle = async () => {
     if (!activeNotebook) return
     const res = await post<Article>('/articles', {
@@ -80,13 +75,11 @@ export default function Layout({ token, username, onLogout }: Props) {
     })
     if (res.ok && res.data) {
       setActiveArticle(res.data)
-      // Refresh lists in background, concurrently
       loadArticles(activeNotebook.id)
       loadNotebooks()
     }
   }
 
-  // Save article
   const saveArticle = async (id: number, data: { title?: string; content?: string }) => {
     const res = await put<Article>(`/articles/${id}`, data)
     if (res.ok && res.data) {
@@ -96,18 +89,37 @@ export default function Layout({ token, username, onLogout }: Props) {
     return res
   }
 
-  // Delete article
   const deleteArticle = async (id: number) => {
     const res = await del(`/articles/${id}`)
     if (res.ok) {
       if (activeArticle?.id === id) setActiveArticle(null)
       if (activeNotebook) {
-        // Parallel refresh
         loadArticles(activeNotebook.id)
         loadNotebooks()
       }
     }
     return res
+  }
+
+  // Import article from URL
+  const importArticle = async (url: string) => {
+    if (!activeNotebook) return
+    setImporting(true)
+    try {
+      const res = await post<Article>('/articles/import', {
+        url,
+        notebook_id: activeNotebook.id,
+      })
+      if (!res.ok) throw new Error(res.error || '导入失败')
+      if (res.data) {
+        setActiveArticle(res.data)
+        setShowImport(false)
+        loadArticles(activeNotebook.id)
+        loadNotebooks()
+      }
+    } finally {
+      setImporting(false)
+    }
   }
 
   return (
@@ -128,7 +140,6 @@ export default function Layout({ token, username, onLogout }: Props) {
           <span className="font-semibold text-gray-900 text-sm">CFNote</span>
         </div>
 
-        {/* Search */}
         <button
           onClick={() => setShowSearch(!showSearch)}
           className="ml-4 flex items-center gap-2 bg-gray-100 hover:bg-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-500 transition-colors flex-1 max-w-xs"
@@ -147,7 +158,6 @@ export default function Layout({ token, username, onLogout }: Props) {
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
         <div className={`${sidebarOpen ? 'w-56' : 'w-0'} transition-all duration-200 overflow-hidden border-r border-gray-200 bg-gray-50/70 shrink-0`}>
           <Sidebar
             notebooks={notebooks}
@@ -158,7 +168,6 @@ export default function Layout({ token, username, onLogout }: Props) {
           />
         </div>
 
-        {/* Article List */}
         <div className="w-72 border-r border-gray-200 bg-white shrink-0 flex flex-col overflow-hidden">
           <ArticleList
             articles={articles}
@@ -167,10 +176,10 @@ export default function Layout({ token, username, onLogout }: Props) {
             onSelect={(a) => loadArticleDetail(a.id)}
             onCreate={createArticle}
             onDelete={deleteArticle}
+            onImport={() => setShowImport(true)}
           />
         </div>
 
-        {/* Editor */}
         <div className="flex-1 overflow-hidden">
           {activeArticle ? (
             <ArticleEditor article={activeArticle} onSave={saveArticle} />
@@ -187,9 +196,12 @@ export default function Layout({ token, username, onLogout }: Props) {
         </div>
       </div>
 
-      {/* Search Panel Overlay */}
       {showSearch && (
         <SearchPanel token={token} onClose={() => setShowSearch(false)} onOpenArticle={(id) => { loadArticleDetail(id); setShowSearch(false) }} />
+      )}
+
+      {showImport && (
+        <ImportDialog loading={importing} onImport={importArticle} onClose={() => !importing && setShowImport(false)} />
       )}
     </div>
   )

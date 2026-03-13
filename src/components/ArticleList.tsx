@@ -7,9 +7,10 @@ interface Props {
   onSelect: (article: Article) => void
   onCreate: () => void
   onDelete: (id: number) => Promise<any>
+  onImport: () => void
 }
 
-export default function ArticleList({ articles, activeArticle, notebookName, onSelect, onCreate, onDelete }: Props) {
+export default function ArticleList({ articles, activeArticle, notebookName, onSelect, onCreate, onDelete, onImport }: Props) {
   const formatDate = (d: string) => {
     const date = new Date(d + 'Z')
     const now = new Date()
@@ -29,15 +30,26 @@ export default function ArticleList({ articles, activeArticle, notebookName, onS
           <span className="text-xs text-gray-400">{articles.length} 篇文章</span>
         </div>
         {notebookName && (
-          <button
-            onClick={onCreate}
-            className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 transition-colors"
-            title="新建文章"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onImport}
+              className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-500 transition-colors"
+              title="从网页导入"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+            </button>
+            <button
+              onClick={onCreate}
+              className="p-1.5 rounded-lg hover:bg-emerald-50 text-emerald-600 transition-colors"
+              title="新建文章"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
         )}
       </div>
 
