@@ -1,0 +1,143 @@
+import { useState } from 'react'
+
+interface Props {
+  onComplete: (token: string, username: string) => void
+}
+
+export default function SetupPage({ onComplete }: Props) {
+  const [step, setStep] = useState<'welcome' | 'init' | 'register'>('welcome')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPwd, setConfirmPwd] = useState('')
+
+  const handleInit = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await fetch('/api/init', { method: 'POST' })
+      const json = await res.json() as any
+      if (!json.ok) throw new Error(json.error)
+      setStep('register')
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRegister = async () => {
+    if (!username.trim() || !password) { setError('请填写所有字段'); return }
+    if (password !== confirmPwd) { setError('两次密码不一致'); return }
+    if (password.length < 6) { setError('密码至少6个字符'); return }
+    setLoading(true)
+    setError('')
+    try {
+      // Register
+      const regRes = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      })
+      const regJson = await regRes.json() as any
+      if (!regJson.ok) throw new Error(regJson.error)
+
+      // Auto login
+      const loginRes = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      })
+      const loginJson = await loginRes.json() as any
+      if (!loginJson.ok) throw new Error(loginJson.error)
+
+      onComplete(loginJson.data.token, loginJson.data.username)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-lg max-w-md w-full p-8">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-emerald-500 rounded-2xl mb-4">
+            <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900">CFNote</h1>
+          <p className="text-gray-500 mt-1">私人知识库</p>
+        </div>
+
+        {step === 'welcome' && (
+          <div className="text-center">
+            <p className="text-gray-600 mb-6">
+              欢迎使用 CFNote！这是您第一次使用，需要先初始化系统并创建账户。
+            </p>
+            <button
+              onClick={handleInit}
+              disabled={loading}
+              className="w-full bg-emerald-500 text-white rounded-lg px-4 py-3 font-medium hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+            >
+              {loading ? '初始化中...' : '初始化系统'}
+            </button>
+          </div>
+        )}
+
+        {step === 'register' && (
+          <div>
+            <p className="text-gray-600 mb-6 text-center">系统已就绪，请创建您的账户</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  placeholder="2-32个字符"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">密码</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  placeholder="至少6个字符"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">确认密码</label>
+                <input
+                  type="password"
+                  value={confirmPwd}
+                  onChange={(e) => setConfirmPwd(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleRegister()}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                />
+              </div>
+              <button
+                onClick={handleRegister}
+                disabled={loading}
+                className="w-full bg-emerald-500 text-white rounded-lg px-4 py-3 font-medium hover:bg-emerald-600 disabled:opacity-50 transition-colors"
+              >
+                {loading ? '创建中...' : '创建账户'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <p className="mt-4 text-sm text-red-600 text-center bg-red-50 rounded-lg p-2">{error}</p>
+        )}
+      </div>
+    </div>
+  )
+}
