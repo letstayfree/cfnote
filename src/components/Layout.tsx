@@ -13,7 +13,7 @@ interface Props {
 }
 
 export default function Layout({ token, username, onLogout }: Props) {
-  const api = useApi(token)
+  const { get, post, put, del } = useApi(token)
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
   const [activeNotebook, setActiveNotebook] = useState<Notebook | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
@@ -23,17 +23,17 @@ export default function Layout({ token, username, onLogout }: Props) {
 
   // Load notebooks
   const loadNotebooks = useCallback(async () => {
-    const res = await api.get<Notebook[]>('/notebooks')
+    const res = await get<Notebook[]>('/notebooks')
     if (res.ok && res.data) setNotebooks(res.data)
-  }, [api])
+  }, [get])
 
   useEffect(() => { loadNotebooks() }, [loadNotebooks])
 
   // Load articles when notebook changes
   const loadArticles = useCallback(async (notebookId: number) => {
-    const res = await api.get<Article[]>(`/notebooks/${notebookId}/articles`)
+    const res = await get<Article[]>(`/notebooks/${notebookId}/articles`)
     if (res.ok && res.data) setArticles(res.data)
-  }, [api])
+  }, [get])
 
   useEffect(() => {
     if (activeNotebook) {
@@ -47,20 +47,20 @@ export default function Layout({ token, username, onLogout }: Props) {
 
   // Load full article detail
   const loadArticleDetail = useCallback(async (articleId: number) => {
-    const res = await api.get<Article>(`/articles/${articleId}`)
+    const res = await get<Article>(`/articles/${articleId}`)
     if (res.ok && res.data) setActiveArticle(res.data)
-  }, [api])
+  }, [get])
 
   // Create notebook
   const createNotebook = async (name: string) => {
-    const res = await api.post<Notebook>('/notebooks', { name })
+    const res = await post<Notebook>('/notebooks', { name })
     if (res.ok) await loadNotebooks()
     return res
   }
 
   // Delete notebook
   const deleteNotebook = async (id: number) => {
-    const res = await api.del(`/notebooks/${id}`)
+    const res = await del(`/notebooks/${id}`)
     if (res.ok) {
       if (activeNotebook?.id === id) {
         setActiveNotebook(null)
@@ -73,7 +73,7 @@ export default function Layout({ token, username, onLogout }: Props) {
   // Create article
   const createArticle = async () => {
     if (!activeNotebook) return
-    const res = await api.post<Article>('/articles', {
+    const res = await post<Article>('/articles', {
       notebook_id: activeNotebook.id,
       title: '无标题文章',
       content: '',
@@ -87,7 +87,7 @@ export default function Layout({ token, username, onLogout }: Props) {
 
   // Save article
   const saveArticle = async (id: number, data: { title?: string; content?: string }) => {
-    const res = await api.put<Article>(`/articles/${id}`, data)
+    const res = await put<Article>(`/articles/${id}`, data)
     if (res.ok && res.data) {
       setActiveArticle(res.data)
       if (activeNotebook) await loadArticles(activeNotebook.id)
@@ -97,7 +97,7 @@ export default function Layout({ token, username, onLogout }: Props) {
 
   // Delete article
   const deleteArticle = async (id: number) => {
-    const res = await api.del(`/articles/${id}`)
+    const res = await del(`/articles/${id}`)
     if (res.ok) {
       if (activeArticle?.id === id) setActiveArticle(null)
       if (activeNotebook) {

@@ -28,27 +28,36 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     ).bind(notebook_id).run()
 
     // Vectorize if content is non-empty
+    let vectorizeError: string | null = null
     if (content && content.trim().length > 0) {
-      await vectorizeArticle(env, articleId as number, user.id, notebook_id, title.trim(), content)
+      vectorizeError = await vectorizeArticle(env, articleId as number, user.id, notebook_id, title.trim(), content)
     }
 
     const article = await env.DB.prepare('SELECT * FROM articles WHERE id = ?').bind(articleId).first()
-    return ok(article)
+    return ok({ ...article as any, vectorize_error: vectorizeError })
   } catch (e: any) {
     return err('创建失败: ' + e.message, 500)
   }
 }
 
-// Helper: vectorize an article's content
+// Helper: vectorize an article's content. Returns error message or null on success.
 async function vectorizeArticle(
   env: Env, articleId: number, userId: number, notebookId: number, title: string, content: string,
-) {
+): Promise<string | null> {
   try {
     const chunks = chunkText(title + '\n' + content)
 
     // Batch embed all chunks
     const embedResult: any = await env.AI.run('@cf/baai/bge-m3' as any, { text: chunks })
     const vectors = embedResult.data as number[][]
+
+    if (!vectors || vectors.length === 0) {
+      return '嵌入模型未返回向量数据'
+    }
+
+    if (vectors.length !== chunks.length) {
+      return `向量数量(${vectors.length})与分块数量(${chunks.length})不匹配`
+    }
 
     // Prepare Vectorize upsert and D1 chunk records
     const vectorEntries: VectorizeVector[] = []
@@ -68,18 +77,18 @@ async function vectorizeArticle(
     }
 
     // Upsert vectors
-    if (vectorEntries.length > 0) {
-      await env.VECTORIZE.upsert(vectorEntries)
-    }
+    await env.VECTORIZE.upsert(vectorEntries)
 
     // Batch insert chunk records + mark article as vectorized
     await env.DB.batch([
       ...chunkInserts,
       env.DB.prepare('UPDATE articles SET is_vectorized = 1 WHERE id = ?').bind(articleId),
     ])
-  } catch (e) {
-    // Vectorization failure is non-blocking; article is still saved
+
+    return null
+  } catch (e: any) {
     console.error('Vectorization failed for article', articleId, e)
+    return '向量化失败: ' + (e.message || String(e))
   }
 }
 

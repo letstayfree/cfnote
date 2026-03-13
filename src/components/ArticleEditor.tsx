@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { marked } from 'marked'
 import type { Article } from '../types'
 
@@ -14,6 +14,8 @@ export default function ArticleEditor({ article, onSave }: Props) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(true)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveRef = useRef(onSave)
+  saveRef.current = onSave
 
   // Reset state when article changes
   useEffect(() => {
@@ -28,12 +30,24 @@ export default function ArticleEditor({ article, onSave }: Props) {
     setSaved(!changed)
   }, [title, content, article.title, article.content])
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     setSaving(true)
-    const res = await onSave(article.id, { title, content })
+    const res = await saveRef.current(article.id, { title, content })
     setSaving(false)
     if (res?.ok) setSaved(true)
-  }
+  }, [article.id, title, content])
+
+  // Ctrl+S / Cmd+S to save
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        if (!saving && !saved) handleSave()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [handleSave, saving, saved])
 
   // Auto-save after 3s idle
   useEffect(() => {
@@ -43,7 +57,7 @@ export default function ArticleEditor({ article, onSave }: Props) {
       handleSave()
     }, 3000)
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
-  }, [title, content])
+  }, [handleSave, saved])
 
   const renderMarkdown = () => {
     try {

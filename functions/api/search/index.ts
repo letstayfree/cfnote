@@ -1,4 +1,4 @@
-import { ok, err, getUser } from '../_utils'
+import { ok, err } from '../_utils'
 import type { Env } from '../../../src/types'
 
 // POST /api/search - Semantic search (vector only, no LLM)
@@ -12,11 +12,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     const embedResult: any = await env.AI.run('@cf/baai/bge-m3' as any, { text: [query.trim()] })
     const queryVector = embedResult.data[0] as number[]
 
-    // Search Vectorize with optional notebook filter
-    const filter: VectorizeVectorMetadataFilter = { user_id: user.id }
-    if (notebook_id) {
-      (filter as any).notebook_id = notebook_id
+    if (!queryVector || queryVector.length === 0) {
+      return err('查询向量生成失败', 500)
     }
+
+    // Search Vectorize with metadata filter
+    const filter: Record<string, number> = { user_id: user.id }
+    if (notebook_id) filter.notebook_id = notebook_id
 
     const matches = await env.VECTORIZE.query(queryVector, {
       topK: 10,
@@ -27,9 +29,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     if (!matches.matches || matches.matches.length === 0) {
       return ok({ results: [] })
     }
-
-    // Gather unique article IDs
-    const articleIds = [...new Set(matches.matches.map((m) => m.metadata?.article_id as number))]
 
     // Fetch article info and chunk texts
     const results = []

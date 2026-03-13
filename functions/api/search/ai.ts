@@ -12,11 +12,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     const embedResult: any = await env.AI.run('@cf/baai/bge-m3' as any, { text: [query.trim()] })
     const queryVector = embedResult.data[0] as number[]
 
-    // 2. Search Vectorize
-    const filter: VectorizeVectorMetadataFilter = { user_id: user.id }
-    if (notebook_id) {
-      (filter as any).notebook_id = notebook_id
+    if (!queryVector || queryVector.length === 0) {
+      return err('查询向量生成失败', 500)
     }
+
+    // 2. Search Vectorize with metadata filter
+    const filter: Record<string, number> = { user_id: user.id }
+    if (notebook_id) filter.notebook_id = notebook_id
 
     const matches = await env.VECTORIZE.query(queryVector, {
       topK: 5,
@@ -32,8 +34,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     const sources = []
     const contextParts: string[] = []
 
-    for (let i = 0; i < matches.matches.length; i++) {
-      const match = matches.matches[i]
+    for (const match of matches.matches) {
       const articleId = match.metadata?.article_id as number
       const chunkIndex = match.metadata?.chunk_index as number
 
@@ -48,7 +49,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       ).bind(articleId, chunkIndex).first<{ chunk_text: string }>()
 
       if (article && chunk) {
-        contextParts.push(`[${i + 1}] ${chunk.chunk_text}`)
+        contextParts.push(`[${sources.length + 1}] ${chunk.chunk_text}`)
         sources.push({
           article_id: article.id,
           article_title: article.title,
@@ -57,6 +58,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
           score: match.score,
         })
       }
+    }
+
+    if (sources.length === 0) {
+      return ok({ answer: '未在知识库中找到相关内容。', sources: [] })
     }
 
     // 4. Generate answer with LLM

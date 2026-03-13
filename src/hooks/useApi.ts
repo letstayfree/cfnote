@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
 const API_BASE = '/api'
 
@@ -32,5 +32,5 @@ export function useApi(token: string | null) {
     [request],
   )
 
-  return { get, post, put, del }
+  return useMemo(() => ({ get, post, put, del }), [get, post, put, del])
 }
