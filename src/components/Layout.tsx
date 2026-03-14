@@ -14,7 +14,7 @@ interface Props {
 }
 
 export default function Layout({ token, username, onLogout }: Props) {
-  const { get, post, put, del } = useApi(token)
+  const { get, post, put, del } = useApi(token, onLogout)
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
   const [activeNotebook, setActiveNotebook] = useState<Notebook | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
