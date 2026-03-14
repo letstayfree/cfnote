@@ -39,6 +39,8 @@
 - **自动向量化**：文章保存后自动分块（500字/块）→ 嵌入 → 存入 Vectorize
 - **语义搜索**：基于向量相似度的自然语言搜索，不消耗 LLM 额度
 - **AI 问答**：可选功能，基于检索内容由 LLM 生成回答
+- **URL 导入**：通过 Jina Reader 抓取网页内容并自动向量化入库
+- **统计仪表盘**：实时查看知识库规模、Workers AI 额度消耗、向量存储使用率和调用次数趋势
 - **首次初始化引导**：自动检测系统状态，引导创建数据库和用户
 
 ## 免费额度适配
@@ -113,6 +115,151 @@ npm run deploy
 2. 填写用户名和密码 —— 创建管理员账户
 3. 自动登录进入主界面
 
+## 统计仪表盘
+
+点击顶栏右侧的柱状图图标打开统计面板，可查看：
+
+- **概览卡片**：笔记本数、文章数、已索引文章数、向量存储使用率
+- **Workers AI 额度**：今日 neurons 消耗进度条、按模型细分、近7天趋势图
+- **使用量统计**：搜索/AI问答 的今日/7天/累计调用次数，以及向量化、导入次数
+- **7天趋势**：纯 CSS 柱状图，展示近7天搜索和AI问答的调用走势
+
+### 环境变量（可选）
+
+统计面板中的 Workers AI 额度数据来自 Cloudflare GraphQL Analytics API，需配置以下环境变量才能显示，未配置时面板其余部分仍可正常工作：
+
+| 变量 | 必需 | 说明 |
+|------|------|------|
+| `CF_API_TOKEN` | 可选 | Cloudflare API Token，需包含 `Account Analytics: Read` 权限 |
+| `CF_ACCOUNT_ID` | 可选 | Cloudflare 账户 ID（在仪表盘首页 URL 中可找到） |
+
+设置方式：
+
+```bash
+wrangler pages secret put CF_API_TOKEN
+wrangler pages secret put CF_ACCOUNT_ID
+```
+
+### 统计接口 `GET /api/stats`
+
+需认证（Bearer Token），无请求参数。返回结构如下：
+
+```jsonc
+{
+  // ---- 内容统计 ----
+  "notebooks": 5,               // 笔记本总数
+  "articles": 42,               // 文章总数
+  "articles_vectorized": 38,    // 已向量化文章数
+
+  // ---- 向量存储 ----
+  "vectors_count": 156,         // 当前存储的向量数（来自 Vectorize.describe()）
+  "vectors_limit": 4882,        // 免费额度上限（5,000,000 维 ÷ 1024 维/向量）
+  "vector_usage_percent": 3.2,  // 使用百分比
+
+  // ---- Workers AI 用量（CF GraphQL API，未配置时为 null）----
+  "ai_usage": {
+    "neurons_today": 215,       // 今日已消耗 neurons
+    "neurons_limit": 10000,     // 每日免费上限
+    "models": [                 // 按模型细分
+      {
+        "modelId": "@cf/baai/bge-m3",
+        "count": 12,            // 调用次数
+        "neurons": 80,          // 消耗 neurons
+        "inputTokens": 5600,    // 输入 token 数
+        "outputTokens": 0       // 输出 token 数
+      }
+    ],
+    "daily": [                  // 近7天每日趋势
+      { "date": "2026-03-08", "neurons": 180, "count": 10 }
+    ]
+  },
+
+  // ---- 调用次数统计（D1 usage_logs 自行追踪）----
+  "usage": {
+    "search_today": 8,          // 语义搜索 — 今日
+    "search_7d": 45,            // 语义搜索 — 近7天
+    "search_total": 320,        // 语义搜索 — 累计
+    "ai_qa_today": 3,           // AI问答 — 今日
+    "ai_qa_7d": 18,             // AI问答 — 近7天
+    "ai_qa_total": 95,          // AI问答 — 累计
+    "vectorize_total": 42,      // 向量化 — 累计
+    "import_total": 6           // URL导入 — 累计
+  },
+
+  // ---- 7天趋势 ----
+  "daily_trend": [
+    { "date": "2026-03-08", "search": 5, "ai_qa": 2 },
+    { "date": "2026-03-09", "search": 8, "ai_qa": 1 }
+    // ...共7天
+  ]
+}
+```
+
+#### TypeScript 类型定义
+
+```typescript
+interface Stats {
+  notebooks: number
+  articles: number
+  articles_vectorized: number
+  vectors_count: number
+  vectors_limit: number
+  vector_usage_percent: number
+  ai_usage: StatsAiUsage | null
+  usage: StatsUsage
+  daily_trend: { date: string; search: number; ai_qa: number }[]
+}
+
+interface StatsAiUsage {
+  neurons_today: number
+  neurons_limit: number
+  models: StatsAiModel[]
+  daily: { date: string; neurons: number; count: number }[]
+}
+
+interface StatsAiModel {
+  modelId: string
+  count: number
+  neurons: number
+  inputTokens: number
+  outputTokens: number
+}
+
+interface StatsUsage {
+  search_today: number
+  search_7d: number
+  search_total: number
+  ai_qa_today: number
+  ai_qa_7d: number
+  ai_qa_total: number
+  vectorize_total: number
+  import_total: number
+}
+```
+
+### 数据库表 `usage_logs`
+
+统计面板中的调用次数数据来自 `usage_logs` 表，各接口在成功执行后自动写入日志（fire-and-forget，不影响主请求性能）：
+
+| 接口 | action 值 | 触发时机 |
+|------|----------|---------|
+| `POST /api/search` | `search` | 语义搜索成功返回结果后 |
+| `POST /api/search/ai` | `ai_qa` | AI问答成功生成回答后 |
+| `POST /api/articles` 向量化 | `vectorize` | 文章向量化成功写入 Vectorize 后 |
+| `POST /api/articles/import` | `import` | URL导入文章成功后 |
+
+建表语句（已包含在 `POST /api/init` 初始化流程中）：
+
+```sql
+CREATE TABLE IF NOT EXISTS usage_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  action TEXT NOT NULL,       -- 'search' | 'ai_qa' | 'vectorize' | 'import'
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_user_action ON usage_logs(user_id, action, created_at);
+```
+
 ## 开发与调试
 
 ### 前端开发（仅 UI，无后端）
@@ -157,7 +304,7 @@ cfnote/
 │   │   ├── _middleware.ts      # JWT 认证中间件
 │   │   ├── _utils.ts          # 工具函数（JWT/哈希/分块）
 │   │   ├── status.ts          # GET  /api/status
-│   │   ├── init.ts            # POST /api/init
+│   │   ├── init.ts            # POST /api/init（建表，含 usage_logs）
 │   │   ├── auth/
 │   │   │   ├── register.ts    # POST /api/auth/register
 │   │   │   └── login.ts       # POST /api/auth/login
@@ -166,8 +313,10 @@ cfnote/
 │   │   │   ├── [id].ts        # PUT/DELETE /api/notebooks/:id
 │   │   │   └── [id]/
 │   │   │       └── articles.ts # GET /api/notebooks/:id/articles
+│   │   ├── stats.ts           # GET  /api/stats（统计仪表盘）
 │   │   ├── articles/
 │   │   │   ├── index.ts       # POST /api/articles（含向量化）
+│   │   │   ├── import.ts      # POST /api/articles/import（URL导入）
 │   │   │   └── [id].ts        # GET/PUT/DELETE /api/articles/:id
 │   │   └── search/
 │   │       ├── index.ts       # POST /api/search（语义搜索）
@@ -180,7 +329,9 @@ cfnote/
 │   │   ├── Sidebar.tsx        # 笔记本侧边栏
 │   │   ├── ArticleList.tsx    # 文章列表
 │   │   ├── ArticleEditor.tsx  # Markdown 编辑/预览
-│   │   └── SearchPanel.tsx    # 搜索面板
+│   │   ├── SearchPanel.tsx    # 搜索面板
+│   │   ├── StatsPanel.tsx     # 统计仪表盘面板
+│   │   └── ImportDialog.tsx   # URL导入对话框
 │   ├── hooks/
 │   │   ├── useAuth.ts         # 登录状态管理
 │   │   └── useApi.ts          # API 请求封装

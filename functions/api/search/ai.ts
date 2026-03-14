@@ -91,6 +91,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       max_tokens: 300,
     })
 
+    // Fire-and-forget usage log
+    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(user.id, 'ai_qa').run().catch(() => {})
+
     return ok({
       answer: llmResult.response || '无法生成回答',
       sources,

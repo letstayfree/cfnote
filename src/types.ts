@@ -4,6 +4,8 @@ export interface Env {
   VECTORIZE: VectorizeIndex
   AI: Ai
   JWT_SECRET: string
+  CF_API_TOKEN?: string
+  CF_ACCOUNT_ID?: string
 }
 
 // ---- Database Models ----
@@ -71,4 +73,43 @@ export interface AiSearchResult {
 export interface AuthState {
   token: string | null
   username: string | null
+}
+
+// ---- Stats ----
+export interface StatsAiModel {
+  modelId: string
+  count: number
+  neurons: number
+  inputTokens: number
+  outputTokens: number
+}
+
+export interface StatsAiUsage {
+  neurons_today: number
+  neurons_limit: number
+  models: StatsAiModel[]
+  daily: { date: string; neurons: number; count: number }[]
+}
+
+export interface StatsUsage {
+  search_today: number
+  search_7d: number
+  search_total: number
+  ai_qa_today: number
+  ai_qa_7d: number
+  ai_qa_total: number
+  vectorize_total: number
+  import_total: number
+}
+
+export interface Stats {
+  notebooks: number
+  articles: number
+  articles_vectorized: number
+  vectors_count: number
+  vectors_limit: number
+  vector_usage_percent: number
+  ai_usage: StatsAiUsage | null
+  usage: StatsUsage
+  daily_trend: { date: string; search: number; ai_qa: number }[]
 }

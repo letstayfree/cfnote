@@ -38,6 +38,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
 }
 
 // Helper: vectorize an article's content. Returns error message or null on success.
+// userId is passed for usage logging.
 async function vectorizeArticle(
   env: Env, articleId: number, userId: number, notebookId: number, title: string, content: string,
 ): Promise<string | null> {
@@ -90,6 +91,9 @@ async function vectorizeArticle(
       ...chunkInserts,
       env.DB.prepare('UPDATE articles SET is_vectorized = 1 WHERE id = ?').bind(articleId),
     ])
+
+    // Fire-and-forget usage log
+    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(userId, 'vectorize').run().catch(() => {})
 
     return null
   } catch (e: any) {

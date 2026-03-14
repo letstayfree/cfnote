@@ -59,6 +59,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       vectorize_error = await vectorizeArticle(env, articleId as number, user.id, notebook_id, articleTitle.trim(), articleContent)
     }
 
+    // Fire-and-forget usage log
+    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(user.id, 'import').run().catch(() => {})
+
     const article = await env.DB.prepare('SELECT * FROM articles WHERE id = ?').bind(articleId).first()
     return ok({ ...article as any, vectorize_error })
   } catch (e: any) {

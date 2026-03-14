@@ -15,7 +15,8 @@
       "Bash(cd \"D:/Projects/CF/cfnote\" && npx tsc --noEmit 2>&1 && echo \"OK\")",
       "WebFetch(domain:www.npmjs.com)",
       "Bash(npx tsc:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

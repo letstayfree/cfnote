@@ -81,6 +81,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       }
     }
 
+    // Fire-and-forget usage log
+    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(user.id, 'search').run().catch(() => {})
+
     return ok({
       results: [...seen.values()].sort((a, b) => b.score - a.score),
       debug: { usedFallback, vectorDims: queryVector.length },

@@ -48,3 +48,11 @@ CREATE INDEX IF NOT EXISTS idx_articles_notebook ON articles(notebook_id);
 CREATE INDEX IF NOT EXISTS idx_articles_user ON articles(user_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_article ON chunks(article_id);
 CREATE INDEX IF NOT EXISTS idx_notebooks_user ON notebooks(user_id);
+
+CREATE TABLE IF NOT EXISTS usage_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_usage_logs_user_action ON usage_logs(user_id, action, created_at);
