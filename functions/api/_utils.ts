@@ -171,7 +171,7 @@ export async function ragSearch(
     if (!articleId && articleId !== 0) continue
 
     const article = await env.DB.prepare(
-      `SELECT a.id, a.title, a.notebook_id, n.name as notebook_name
+      `SELECT a.id, a.title, a.notebook_id, a.user_id, n.name as notebook_name
        FROM articles a LEFT JOIN notebooks n ON a.notebook_id = n.id
        WHERE a.id = ?`
     ).bind(articleId).first<any>()
