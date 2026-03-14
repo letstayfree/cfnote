@@ -1,4 +1,4 @@
-import { ok, err, ragSearch } from '../../_utils'
+import { ok, err, ragSearch, withTimeout } from '../../_utils'
 import type { Env } from '../../../../src/types'
 
 // POST /api/conversations/:id/messages - Send message and get AI response
@@ -43,33 +43,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
       content: m.content as string,
     }))
 
-    // 5. Build LLM messages
-    const systemContent = [
-      '你是一个私人知识库助手。请根据以下参考内容回答用户的问题。',
-      '规则：',
-      '- 仅使用参考内容中的信息，不要编造或推测',
-      '- 引用来源时使用 [1][2] 等编号标注',
-      '- 如果参考内容中没有相关信息，请诚实说明',
-      '- 用中文回答',
-    ]
+    // 5. Build LLM messages — context goes in user message (small models follow it better)
+    const systemPrompt = '你是知识库助手。根据参考内容简洁回答问题。仅使用参考内容中的信息，不要编造。引用来源时用 [1][2] 标注。若无相关信息请说明。用中文回答。'
 
+    let userPrompt: string
     if (contextParts.length > 0) {
-      systemContent.push('', '参考内容:', ...contextParts)
+      userPrompt = `参考内容:\n${contextParts.join('\n\n')}\n\n问题: ${content.trim()}`
     } else {
-      systemContent.push('', '（当前问题未找到相关参考内容）')
+      userPrompt = `（知识库中未找到相关参考内容）\n\n问题: ${content.trim()}`
     }
 
     const llmMessages = [
-      { role: 'system', content: systemContent.join('\n') },
+      { role: 'system', content: systemPrompt },
       ...history,
-      { role: 'user', content: content.trim() },
+      { role: 'user', content: userPrompt },
     ]
 
     // 6. Call Workers AI
-    const llmResult: any = await env.AI.run('@cf/meta/llama-3.1-8b-instruct' as any, {
-      messages: llmMessages,
-      max_tokens: 512,
-    })
+    const llmResult: any = await withTimeout(
+      env.AI.run('@cf/meta/llama-3.1-8b-instruct' as any, {
+        messages: llmMessages,
+        max_tokens: 512,
+      }),
+      20000, 'AI 生成回答',
+    )
 
     const assistantContent = llmResult.response || '无法生成回答'
 

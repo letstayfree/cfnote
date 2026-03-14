@@ -13,9 +13,12 @@ export function useApi(token: string | null, onUnauthorized?: () => void) {
 
       let res: Response
       try {
-        res = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...headers, ...options?.headers } })
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), 30000)
+        res = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...headers, ...options?.headers }, signal: controller.signal })
+        clearTimeout(timer)
       } catch {
-        return { ok: false, error: '网络请求失败' }
+        return { ok: false, error: '网络请求失败或超时' }
       }
       if (res.status === 401) {
         onUnauthorizedRef.current?.()

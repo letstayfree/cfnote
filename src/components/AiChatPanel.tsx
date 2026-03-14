@@ -110,8 +110,20 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
         )
       }
     } else {
-      // Remove optimistic message on error
-      setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id))
+      // Replace optimistic message with kept user msg + error msg
+      const errorMsg: Message = {
+        id: -(Date.now() + 1),
+        conversation_id: activeConversation.id,
+        role: 'assistant',
+        content: `**请求失败**：${res.error || '未知错误'}`,
+        sources: null,
+        created_at: new Date().toISOString(),
+      }
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== tempUserMsg.id),
+        { ...tempUserMsg, id: -(Date.now() + 2) },
+        errorMsg,
+      ])
     }
 
     setSending(false)

@@ -1,5 +1,17 @@
 import type { Env } from '../../src/types'
 
+// ---- Timeout Helper ----
+
+export function withTimeout<T>(promise: Promise<T>, ms: number, label = 'operation'): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} 超时 (${ms}ms)`)), ms)
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val) },
+      (err) => { clearTimeout(timer); reject(err) },
+    )
+  })
+}
+
 // ---- Password Hashing (PBKDF2-SHA256) ----
 
 export async function hashPassword(password: string, salt: string): Promise<string> {
@@ -131,72 +143,78 @@ export interface RagSource {
 export async function ragSearch(
   env: Env, query: string, userId: number, topK = 5
 ): Promise<{ contextParts: string[], sources: RagSource[] }> {
-  // 1. Embed the query
-  const embedResult: any = await env.AI.run('@cf/baai/bge-m3' as any, { text: [query.trim()] })
-  const queryVector = embedResult?.data?.[0] as number[] | undefined
+  const empty = { contextParts: [] as string[], sources: [] as RagSource[] }
 
-  if (!queryVector || queryVector.length === 0) {
-    return { contextParts: [], sources: [] }
-  }
+  try {
+    // 1. Embed the query
+    const embedResult: any = await withTimeout(
+      env.AI.run('@cf/baai/bge-m3' as any, { text: [query.trim()] }),
+      15000, 'AI embedding',
+    )
+    const queryVector = embedResult?.data?.[0] as number[] | undefined
 
-  // 2. Search Vectorize — try with filter, fallback to no filter
-  const filter: Record<string, number> = { user_id: userId }
+    if (!queryVector || queryVector.length === 0) return empty
 
-  let matches = await env.VECTORIZE.query(queryVector, {
-    topK: 10,
-    filter,
-    returnMetadata: 'all',
-  })
+    // 2. Search Vectorize — try with filter, fallback to no filter
+    const filter: Record<string, number> = { user_id: userId }
 
-  let usedFallback = false
-  if (!matches.matches || matches.matches.length === 0) {
-    matches = await env.VECTORIZE.query(queryVector, {
+    let matches = await env.VECTORIZE.query(queryVector, {
       topK: 10,
+      filter,
       returnMetadata: 'all',
     })
-    usedFallback = true
-  }
 
-  if (!matches.matches || matches.matches.length === 0) {
-    return { contextParts: [], sources: [] }
-  }
-
-  // 3. Fetch chunk texts for context
-  const sources: RagSource[] = []
-  const contextParts: string[] = []
-
-  for (const match of matches.matches) {
-    const articleId = match.metadata?.article_id as number
-    const chunkIndex = match.metadata?.chunk_index as number
-    if (!articleId && articleId !== 0) continue
-
-    const article = await env.DB.prepare(
-      `SELECT a.id, a.title, a.notebook_id, a.user_id, n.name as notebook_name
-       FROM articles a LEFT JOIN notebooks n ON a.notebook_id = n.id
-       WHERE a.id = ?`
-    ).bind(articleId).first<any>()
-
-    const chunk = await env.DB.prepare(
-      'SELECT chunk_text FROM chunks WHERE article_id = ? AND chunk_index = ?'
-    ).bind(articleId, chunkIndex).first<{ chunk_text: string }>()
-
-    if (article && chunk) {
-      if (usedFallback && article.user_id !== userId) continue
-
-      contextParts.push(`[${sources.length + 1}] ${chunk.chunk_text}`)
-      sources.push({
-        article_id: article.id,
-        article_title: article.title,
-        notebook_name: article.notebook_name || '',
-        chunk_text: chunk.chunk_text,
-        score: match.score,
+    let usedFallback = false
+    if (!matches.matches || matches.matches.length === 0) {
+      matches = await env.VECTORIZE.query(queryVector, {
+        topK: 10,
+        returnMetadata: 'all',
       })
+      usedFallback = true
     }
 
-    if (sources.length >= topK) break
-  }
+    if (!matches.matches || matches.matches.length === 0) return empty
 
-  return { contextParts, sources }
+    // 3. Fetch chunk texts for context
+    const sources: RagSource[] = []
+    const contextParts: string[] = []
+
+    for (const match of matches.matches) {
+      const articleId = match.metadata?.article_id as number
+      const chunkIndex = match.metadata?.chunk_index as number
+      if (!articleId && articleId !== 0) continue
+
+      const article = await env.DB.prepare(
+        `SELECT a.id, a.title, a.notebook_id, a.user_id, n.name as notebook_name
+         FROM articles a LEFT JOIN notebooks n ON a.notebook_id = n.id
+         WHERE a.id = ?`
+      ).bind(articleId).first<any>()
+
+      const chunk = await env.DB.prepare(
+        'SELECT chunk_text FROM chunks WHERE article_id = ? AND chunk_index = ?'
+      ).bind(articleId, chunkIndex).first<{ chunk_text: string }>()
+
+      if (article && chunk) {
+        if (usedFallback && article.user_id !== userId) continue
+
+        contextParts.push(`[${sources.length + 1}] ${chunk.chunk_text}`)
+        sources.push({
+          article_id: article.id,
+          article_title: article.title,
+          notebook_name: article.notebook_name || '',
+          chunk_text: chunk.chunk_text,
+          score: match.score,
+        })
+      }
+
+      if (sources.length >= topK) break
+    }
+
+    return { contextParts, sources }
+  } catch (e) {
+    console.error('ragSearch failed:', e)
+    return empty
+  }
 }
 
 // ---- Auth Middleware Helper ----
