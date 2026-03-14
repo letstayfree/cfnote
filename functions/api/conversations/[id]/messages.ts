@@ -30,10 +30,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
       'SELECT * FROM messages WHERE id = ?'
     ).bind(userMsgResult.meta.last_row_id).first<any>()
 
-    // 3. RAG search for context
-    const { contextParts, sources } = await ragSearch(env, content.trim(), user.id, 5)
-
-    // 4. Load recent history (last 6 messages = 3 rounds)
+    // 3. Load recent history (last 6 messages = 3 rounds)
     const historyRows = await env.DB.prepare(
       'SELECT role, content FROM messages WHERE conversation_id = ? AND id != ? ORDER BY created_at DESC LIMIT 6'
     ).bind(conversationId, userMsgResult.meta.last_row_id).all()
@@ -43,12 +40,29 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
       content: m.content as string,
     }))
 
-    // 5. Build LLM messages — context goes in user message (small models follow it better)
-    const systemPrompt = '你是知识库助手。根据参考内容简洁回答问题。仅使用参考内容中的信息，不要编造。引用来源时用 [1][2] 标注。若无相关信息请说明。用中文回答。'
+    // 4. Decide whether to do RAG search
+    // Short messages (≤ 6 chars) with existing history are likely follow-ups
+    // (e.g. "继续", "详细说说", "好的") — skip RAG to avoid injecting irrelevant noise
+    const isFollowUp = content.trim().length <= 6 && history.length > 0
+    let contextParts: string[] = []
+    let sources: import('../../_utils').RagSource[] = []
+
+    if (!isFollowUp) {
+      const rag = await ragSearch(env, content.trim(), user.id, 5)
+      contextParts = rag.contextParts
+      sources = rag.sources
+    }
+
+    // 5. Build LLM messages
+    const systemPrompt = history.length > 0
+      ? '你是知识库助手。根据对话历史和参考内容回答用户问题。仅使用参考内容和对话历史中的信息，不要编造。引用来源时用 [1][2] 标注。若无相关信息请说明。用中文回答。'
+      : '你是知识库助手。根据参考内容简洁回答问题。仅使用参考内容中的信息，不要编造。引用来源时用 [1][2] 标注。若无相关信息请说明。用中文回答。'
 
     let userPrompt: string
     if (contextParts.length > 0) {
       userPrompt = `参考内容:\n${contextParts.join('\n\n')}\n\n问题: ${content.trim()}`
+    } else if (history.length > 0) {
+      userPrompt = content.trim()
     } else {
       userPrompt = `（知识库中未找到相关参考内容）\n\n问题: ${content.trim()}`
     }
@@ -65,7 +79,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
         messages: llmMessages,
         max_tokens: 512,
       }),
-      20000, 'AI 生成回答',
+      60000, 'AI 生成回答',
     )
 
     const assistantContent = llmResult.response || '无法生成回答'

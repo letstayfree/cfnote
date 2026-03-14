@@ -27,7 +27,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
         ],
         max_tokens: 300,
       }),
-      20000, 'AI 生成回答',
+      60000, 'AI 生成回答',
     )
 
     // Fire-and-forget usage log

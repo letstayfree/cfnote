@@ -14,7 +14,7 @@ export function useApi(token: string | null, onUnauthorized?: () => void) {
       let res: Response
       try {
         const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), 30000)
+        const timer = setTimeout(() => controller.abort(), 90000)
         res = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...headers, ...options?.headers }, signal: controller.signal })
         clearTimeout(timer)
       } catch {

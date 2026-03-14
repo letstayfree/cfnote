@@ -16,7 +16,8 @@
       "WebFetch(domain:www.npmjs.com)",
       "Bash(npx tsc:*)",
       "Bash(npx vite:*)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(cd \"D:/Projects/CF/cfnote\" && npm run deploy 2>&1)"
     ]
   }
 }
