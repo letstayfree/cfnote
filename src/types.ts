@@ -99,8 +99,9 @@ export interface AuthState {
 }
 
 // ---- Settings ----
-export interface UserSettings {
+export interface Settings {
   llm_model: string
+  [key: string]: string
 }
 
 export interface ModelInfo {

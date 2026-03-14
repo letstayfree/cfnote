@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useApi } from '../hooks/useApi'
-import type { UserSettings, ModelInfo } from '../types'
+import type { Settings, ModelInfo } from '../types'
 
 const MODELS: ModelInfo[] = [
   { id: '@cf/meta/llama-3.1-8b-instruct', label: 'Llama 3.1 8B', description: '轻量快速，适合简单问答', type: '通用', cost: '~15 neurons' },
@@ -29,7 +29,7 @@ export default function SettingsPanel({ token, onClose }: Props) {
 
   useEffect(() => {
     (async () => {
-      const res = await api.get<UserSettings>('/settings')
+      const res = await api.get<Settings>('/settings')
       if (res.ok && res.data) {
         setSelected(res.data.llm_model)
       } else {
@@ -42,7 +42,7 @@ export default function SettingsPanel({ token, onClose }: Props) {
   const handleSave = async () => {
     setSaving(true)
     setError('')
-    const res = await api.put<UserSettings>('/settings', { llm_model: selected })
+    const res = await api.put<Settings>('/settings', { llm_model: selected })
     if (res.ok) {
       onClose()
     } else {

@@ -1,4 +1,4 @@
-import { ok, err, ragSearch, withTimeout, getUserModel, isReasoningModel, stripThinkTags } from '../_utils'
+import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags } from '../_utils'
 import type { Env } from '../../../src/types'
 
 // POST /api/search/ai - AI-powered Q&A search (vector search + LLM)
@@ -15,7 +15,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     }
 
     // Generate answer with LLM
-    const modelId = await getUserModel(env, user.id)
+    const modelId = await getSettingValue(env, 'llm_model', DEFAULT_MODEL)
     const prompt = `参考内容:\n${contextParts.join('\n\n')}\n\n问题: ${query.trim()}`
     const llmResult: any = await withTimeout(
       env.AI.run(modelId as any, {

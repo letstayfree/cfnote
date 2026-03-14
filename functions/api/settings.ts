@@ -1,33 +1,42 @@
-import { ok, err, getUserModel, isAllowedModel, DEFAULT_MODEL } from './_utils'
+import { ok, err, getSettingValue, isAllowedModel, DEFAULT_MODEL } from './_utils'
 import type { Env } from '../../src/types'
 
-// GET /api/settings - Get user settings (auto-create default if missing)
-export const onRequestGet: PagesFunction<Env> = async ({ env, data }) => {
-  const user = (data as any).user
+// GET /api/settings - Get all settings as key-value object
+export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   try {
-    const llm_model = await getUserModel(env, user.id)
-    return ok({ llm_model })
+    const rows = await env.DB.prepare('SELECT key, value FROM settings').all<{ key: string; value: string }>()
+    const settings: Record<string, string> = {}
+    for (const r of rows.results ?? []) {
+      settings[r.key] = r.value
+    }
+    // Ensure llm_model always has a value
+    if (!settings.llm_model) {
+      settings.llm_model = DEFAULT_MODEL
+    }
+    return ok(settings)
   } catch (e: any) {
     return err('获取设置失败: ' + e.message, 500)
   }
 }
 
-// PUT /api/settings - Update user settings
-export const onRequestPut: PagesFunction<Env> = async ({ request, env, data }) => {
-  const user = (data as any).user
+// PUT /api/settings - Batch update settings
+export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   try {
-    const { llm_model } = await request.json<{ llm_model: string }>()
+    const body = await request.json<Record<string, string>>()
 
-    if (!llm_model || !isAllowedModel(llm_model)) {
+    // Validate llm_model if present
+    if (body.llm_model !== undefined && !isAllowedModel(body.llm_model)) {
       return err('不支持的模型')
     }
 
-    await env.DB.prepare(
-      `INSERT INTO user_settings (user_id, llm_model) VALUES (?, ?)
-       ON CONFLICT(user_id) DO UPDATE SET llm_model = excluded.llm_model`
-    ).bind(user.id, llm_model).run()
+    for (const [key, value] of Object.entries(body)) {
+      await env.DB.prepare(
+        `INSERT INTO settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      ).bind(key, value).run()
+    }
 
-    return ok({ llm_model })
+    return ok(body)
   } catch (e: any) {
     return err('更新设置失败: ' + e.message, 500)
   }

@@ -24,11 +24,11 @@ export function isAllowedModel(modelId: string): boolean {
   return ALLOWED_MODELS.some(m => m.id === modelId)
 }
 
-export async function getUserModel(env: Env, userId: number): Promise<string> {
+export async function getSettingValue(env: Env, key: string, defaultValue: string): Promise<string> {
   const row = await env.DB.prepare(
-    'SELECT llm_model FROM user_settings WHERE user_id = ?'
-  ).bind(userId).first<{ llm_model: string }>()
-  return row?.llm_model ?? DEFAULT_MODEL
+    'SELECT value FROM settings WHERE key = ?'
+  ).bind(key).first<{ value: string }>()
+  return row?.value ?? defaultValue
 }
 
 export function stripThinkTags(text: string): string {

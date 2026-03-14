@@ -1,4 +1,4 @@
-import { ok, err, ragSearch, withTimeout, getUserModel, isReasoningModel, stripThinkTags } from '../../_utils'
+import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags } from '../../_utils'
 import type { Env } from '../../../../src/types'
 
 // POST /api/conversations/:id/messages - Send message and get AI response
@@ -84,7 +84,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
     ]
 
     // 6. Call Workers AI with user's preferred model
-    const modelId = await getUserModel(env, user.id)
+    const modelId = await getSettingValue(env, 'llm_model', DEFAULT_MODEL)
     const llmResult: any = await withTimeout(
       env.AI.run(modelId as any, {
         messages: llmMessages,
