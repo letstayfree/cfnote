@@ -16,25 +16,43 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     if (!nb) return err('笔记本不存在', 404)
 
     // Fetch article content via Jina Reader API
-    const headers: Record<string, string> = {
+    const jinaHeaders: Record<string, string> = {
       'Accept': 'application/json',
+      'X-Return-Format': 'markdown',
     }
     // Optional: use API key for higher rate limits
     const jinaKey = (env as any).JINA_API_KEY
     if (jinaKey) {
-      headers['Authorization'] = `Bearer ${jinaKey}`
+      jinaHeaders['Authorization'] = `Bearer ${jinaKey}`
     }
 
     const jinaUrl = `https://r.jina.ai/${url.trim()}`
-    const jinaRes = await fetch(jinaUrl, { headers })
+    const jinaRes = await fetch(jinaUrl, { headers: jinaHeaders })
 
     if (!jinaRes.ok) {
       return err(`文章获取失败 (HTTP ${jinaRes.status})`, 502)
     }
 
-    const jinaData = await jinaRes.json() as any
-    const articleTitle = jinaData.data?.title || jinaData.title || new URL(url).hostname
-    const articleContent = jinaData.data?.content || jinaData.content || ''
+    let articleTitle: string
+    let articleContent: string
+
+    const contentType = jinaRes.headers.get('Content-Type') || ''
+    if (contentType.includes('application/json')) {
+      // JSON response — parse structured data
+      const jinaData = await jinaRes.json() as any
+      articleTitle = jinaData.data?.title || jinaData.title || new URL(url).hostname
+      articleContent = jinaData.data?.content || jinaData.content || ''
+    } else {
+      // Non-JSON (HTML/text) — Jina returned plain text/markdown directly
+      const text = await jinaRes.text()
+      if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+        return err('Jina Reader 无法抓取该页面（目标网站可能阻止了抓取）')
+      }
+      // Extract title from first markdown heading or use hostname
+      const headingMatch = text.match(/^#\s+(.+)$/m)
+      articleTitle = headingMatch?.[1]?.trim() || new URL(url).hostname
+      articleContent = text
+    }
 
     if (!articleContent.trim()) {
       return err('未能从该页面提取到有效内容')

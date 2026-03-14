@@ -19,7 +19,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     let vectors_count = 0
     try {
       const info = await env.VECTORIZE.describe()
-      vectors_count = (info as any).vectorsCount ?? 0
+      const d = info as any
+      vectors_count = d.vectorsCount ?? d.vectorCount ?? 0
     } catch { /* vectorize may not be available locally */ }
 
     const vectors_limit = 4882 // 5M dims / 1024 dims per vector
