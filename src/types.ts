@@ -49,6 +49,29 @@ export interface Chunk {
   created_at: string
 }
 
+export interface Conversation {
+  id: number
+  user_id: number
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+export interface Message {
+  id: number
+  conversation_id: number
+  role: 'user' | 'assistant'
+  content: string
+  sources: SearchResult[] | null
+  created_at: string
+}
+
+export interface SendMessageResponse {
+  user_message: Message
+  assistant_message: Message
+  title_updated?: string
+}
+
 // ---- API Types ----
 export interface ApiResponse<T = unknown> {
   ok: boolean

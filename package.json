@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n fe,api -c cyan,green \"vite\" \"wrangler pages dev dist --port 8788 --compatibility-date=2024-12-01\"",
     "build": "tsc && vite build",
     "preview": "wrangler pages dev dist",
     "deploy": "npm run build && wrangler pages deploy dist"
@@ -28,6 +28,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vite": "^6.4.1",

@@ -5,22 +5,22 @@
 ## 技术架构
 
 ```
-┌──────────────────────────────────────────────┐
-│              Cloudflare Pages                │
-│                                              │
-│   React + Tailwind CSS (SPA)                 │
-│   ┌────────┐ ┌──────────┐ ┌──────────────┐  │
-│   │ 笔记本  │ │ 文章列表  │ │ Markdown编辑 │  │
-│   │ 侧边栏  │ │          │ │ / 预览       │  │
-│   └────────┘ └──────────┘ └──────────────┘  │
-│                    │                         │
-│         Pages Functions (API)                │
-│                    │                         │
-│      ┌─────────┬───┴────┬────────────┐       │
-│      │   D1    │Vectorize│ Workers AI │       │
-│      │ SQLite  │ 向量索引 │ 嵌入 + LLM │       │
-│      └─────────┴────────┴────────────┘       │
-└──────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│              Cloudflare Pages                              │
+│                                                            │
+│   React + Tailwind CSS (SPA)                               │
+│   ┌────────┐ ┌──────────┐ ┌──────────────┐ ┌───────────┐  │
+│   │ 笔记本  │ │ 文章列表  │ │ Markdown编辑 │ │ AI 多轮   │  │
+│   │ 侧边栏  │ │          │ │ / 预览       │ │ 对话面板  │  │
+│   └────────┘ └──────────┘ └──────────────┘ └───────────┘  │
+│                    │                                       │
+│         Pages Functions (API)                              │
+│                    │                                       │
+│      ┌─────────┬───┴────┬────────────┐                     │
+│      │   D1    │Vectorize│ Workers AI │                     │
+│      │ SQLite  │ 向量索引 │ 嵌入 + LLM │                     │
+│      └─────────┴────────┴────────────┘                     │
+└────────────────────────────────────────────────────────────┘
 ```
 
 | 层级 | 技术 |
@@ -38,7 +38,7 @@
 - **Markdown 编辑**：编辑模式 + 预览模式切换，3秒无操作自动保存
 - **自动向量化**：文章保存后自动分块（500字/块）→ 嵌入 → 存入 Vectorize
 - **语义搜索**：基于向量相似度的自然语言搜索，不消耗 LLM 额度
-- **AI 问答**：可选功能，基于检索内容由 LLM 生成回答
+- **AI 多轮对话**：右侧常驻聊天面板，支持基于知识库的多轮问答，历史对话持久化
 - **URL 导入**：通过 Jina Reader 抓取网页内容并自动向量化入库
 - **统计仪表盘**：实时查看知识库规模、Workers AI 额度消耗、向量存储使用率和调用次数趋势
 - **首次初始化引导**：自动检测系统状态，引导创建数据库和用户
@@ -121,8 +121,8 @@ npm run deploy
 
 - **概览卡片**：笔记本数、文章数、已索引文章数、向量存储使用率
 - **Workers AI 额度**：今日 neurons 消耗进度条、按模型细分、近7天趋势图
-- **使用量统计**：搜索/AI问答 的今日/7天/累计调用次数，以及向量化、导入次数
-- **7天趋势**：纯 CSS 柱状图，展示近7天搜索和AI问答的调用走势
+- **使用量统计**：搜索/AI对话 的今日/7天/累计调用次数，以及向量化、导入次数
+- **7天趋势**：纯 CSS 柱状图，展示近7天搜索和AI对话的调用走势
 
 ### 环境变量（可选）
 
@@ -245,6 +245,7 @@ interface StatsUsage {
 |------|----------|---------|
 | `POST /api/search` | `search` | 语义搜索成功返回结果后 |
 | `POST /api/search/ai` | `ai_qa` | AI问答成功生成回答后 |
+| `POST /api/conversations/:id/messages` | `ai_chat` | AI多轮对话生成回答后 |
 | `POST /api/articles` 向量化 | `vectorize` | 文章向量化成功写入 Vectorize 后 |
 | `POST /api/articles/import` | `import` | URL导入文章成功后 |
 
@@ -262,24 +263,31 @@ CREATE INDEX IF NOT EXISTS idx_usage_logs_user_action ON usage_logs(user_id, act
 
 ## 开发与调试
 
-### 前端开发（仅 UI，无后端）
+### 本地开发（推荐）
 
 ```bash
+npm run build    # 首次需要先构建一次
 npm run dev
 ```
 
-启动 Vite 开发服务器（默认 `http://localhost:5173`），支持 HMR 热更新。适合纯 UI 调试，API 请求需要后端运行。
+`npm run dev` 同时启动 Vite 前端（端口 5173，支持 HMR）和 Wrangler 后端（端口 8788）。Vite 自动将 `/api/*` 请求代理到 Wrangler。浏览器访问 `http://localhost:5173`。
 
-### 全栈本地开发（推荐）
+本地环境变量通过项目根目录的 `.dev.vars` 文件配置（已在 `.gitignore` 中）：
+
+```
+JWT_SECRET=your-local-dev-secret
+```
+
+> 注意：本地 D1 使用 `.wrangler/` 目录下的 SQLite 文件，与线上数据库独立。本地环境下 Vectorize 和 Workers AI 需要联网访问 Cloudflare 服务，不可用时相关功能会静默跳过。
+
+### 全栈预览
 
 ```bash
 npm run build
 npm run preview
 ```
 
-`npm run preview` 实际执行 `wrangler pages dev dist`，会在本地模拟完整的 Cloudflare Pages 环境，包括 D1、Vectorize、Workers AI 绑定。默认地址 `http://localhost:8788`。
-
-> 注意：本地 D1 使用 `.wrangler/` 目录下的 SQLite 文件，与线上数据库独立。本地环境下 Vectorize 和 Workers AI 需要联网访问 Cloudflare 服务。
+`npm run preview` 执行 `wrangler pages dev dist`，在本地模拟完整的 Cloudflare Pages 环境。默认地址 `http://localhost:8788`。
 
 ### 类型检查
 
@@ -318,18 +326,24 @@ cfnote/
 │   │   │   ├── index.ts       # POST /api/articles（含向量化）
 │   │   │   ├── import.ts      # POST /api/articles/import（URL导入）
 │   │   │   └── [id].ts        # GET/PUT/DELETE /api/articles/:id
-│   │   └── search/
-│   │       ├── index.ts       # POST /api/search（语义搜索）
-│   │       └── ai.ts          # POST /api/search/ai（AI问答）
+│   │   ├── search/
+│   │   │   ├── index.ts       # POST /api/search（语义搜索）
+│   │   │   └── ai.ts          # POST /api/search/ai（AI问答）
+│   │   └── conversations/
+│   │       ├── index.ts       # GET/POST /api/conversations
+│   │       └── [id].ts        # GET/DELETE /api/conversations/:id
+│   │       └── [id]/
+│   │           └── messages.ts # POST /api/conversations/:id/messages
 ├── src/                        # 前端 React SPA
 │   ├── components/
 │   │   ├── SetupPage.tsx      # 初始化 + 注册引导
 │   │   ├── LoginPage.tsx      # 登录页
-│   │   ├── Layout.tsx         # 三栏主布局
+│   │   ├── Layout.tsx         # 四栏主布局（含 AI 面板）
 │   │   ├── Sidebar.tsx        # 笔记本侧边栏
 │   │   ├── ArticleList.tsx    # 文章列表
 │   │   ├── ArticleEditor.tsx  # Markdown 编辑/预览
-│   │   ├── SearchPanel.tsx    # 搜索面板
+│   │   ├── AiChatPanel.tsx    # AI 多轮对话面板
+│   │   ├── SearchPanel.tsx    # 语义搜索面板
 │   │   ├── StatsPanel.tsx     # 统计仪表盘面板
 │   │   └── ImportDialog.tsx   # URL导入对话框
 │   ├── hooks/

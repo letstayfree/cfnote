@@ -118,6 +118,87 @@ function b64urlDecode(input: string): ArrayBuffer {
   return buf.buffer
 }
 
+// ---- RAG Search ----
+
+export interface RagSource {
+  article_id: number
+  article_title: string
+  notebook_name: string
+  chunk_text: string
+  score: number
+}
+
+export async function ragSearch(
+  env: Env, query: string, userId: number, topK = 5
+): Promise<{ contextParts: string[], sources: RagSource[] }> {
+  // 1. Embed the query
+  const embedResult: any = await env.AI.run('@cf/baai/bge-m3' as any, { text: [query.trim()] })
+  const queryVector = embedResult?.data?.[0] as number[] | undefined
+
+  if (!queryVector || queryVector.length === 0) {
+    return { contextParts: [], sources: [] }
+  }
+
+  // 2. Search Vectorize — try with filter, fallback to no filter
+  const filter: Record<string, number> = { user_id: userId }
+
+  let matches = await env.VECTORIZE.query(queryVector, {
+    topK: 10,
+    filter,
+    returnMetadata: 'all',
+  })
+
+  let usedFallback = false
+  if (!matches.matches || matches.matches.length === 0) {
+    matches = await env.VECTORIZE.query(queryVector, {
+      topK: 10,
+      returnMetadata: 'all',
+    })
+    usedFallback = true
+  }
+
+  if (!matches.matches || matches.matches.length === 0) {
+    return { contextParts: [], sources: [] }
+  }
+
+  // 3. Fetch chunk texts for context
+  const sources: RagSource[] = []
+  const contextParts: string[] = []
+
+  for (const match of matches.matches) {
+    const articleId = match.metadata?.article_id as number
+    const chunkIndex = match.metadata?.chunk_index as number
+    if (!articleId && articleId !== 0) continue
+
+    const article = await env.DB.prepare(
+      `SELECT a.id, a.title, a.notebook_id, n.name as notebook_name
+       FROM articles a LEFT JOIN notebooks n ON a.notebook_id = n.id
+       WHERE a.id = ?`
+    ).bind(articleId).first<any>()
+
+    const chunk = await env.DB.prepare(
+      'SELECT chunk_text FROM chunks WHERE article_id = ? AND chunk_index = ?'
+    ).bind(articleId, chunkIndex).first<{ chunk_text: string }>()
+
+    if (article && chunk) {
+      if (usedFallback && article.user_id !== userId) continue
+
+      contextParts.push(`[${sources.length + 1}] ${chunk.chunk_text}`)
+      sources.push({
+        article_id: article.id,
+        article_title: article.title,
+        notebook_name: article.notebook_name || '',
+        chunk_text: chunk.chunk_text,
+        score: match.score,
+      })
+    }
+
+    if (sources.length >= topK) break
+  }
+
+  return { contextParts, sources }
+}
+
 // ---- Auth Middleware Helper ----
 
 export async function getUser(request: Request, env: Env): Promise<{ id: number; username: string } | null> {

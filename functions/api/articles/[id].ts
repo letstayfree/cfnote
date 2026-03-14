@@ -55,8 +55,8 @@ export const onRequestPut: PagesFunction<Env> = async ({ params, request, env, d
       // Delete old vectors and chunks
       const { results: oldChunks } = await env.DB.prepare('SELECT vector_id FROM chunks WHERE article_id = ?')
         .bind(id).all<{ vector_id: string }>()
-      if (oldChunks.length > 0) {
-        await env.VECTORIZE.deleteByIds(oldChunks.map((c) => c.vector_id))
+      if (oldChunks.length > 0 && env.VECTORIZE) {
+        try { await env.VECTORIZE.deleteByIds(oldChunks.map((c) => c.vector_id)) } catch {}
       }
       await env.DB.prepare('DELETE FROM chunks WHERE article_id = ?').bind(id).run()
       await env.DB.prepare('UPDATE articles SET is_vectorized = 0 WHERE id = ?').bind(id).run()
@@ -84,8 +84,8 @@ export const onRequestDelete: PagesFunction<Env> = async ({ params, env, data })
 
     const { results: chunks } = await env.DB.prepare('SELECT vector_id FROM chunks WHERE article_id = ?')
       .bind(id).all<{ vector_id: string }>()
-    if (chunks.length > 0) {
-      await env.VECTORIZE.deleteByIds(chunks.map((c) => c.vector_id))
+    if (chunks.length > 0 && env.VECTORIZE) {
+      try { await env.VECTORIZE.deleteByIds(chunks.map((c) => c.vector_id)) } catch {}
     }
 
     await env.DB.prepare('DELETE FROM articles WHERE id = ?').bind(id).run()

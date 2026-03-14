@@ -11,13 +11,22 @@ export function useApi(token: string | null, onUnauthorized?: () => void) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (token) headers['Authorization'] = `Bearer ${token}`
 
-      const res = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...headers, ...options?.headers } })
+      let res: Response
+      try {
+        res = await fetch(`${API_BASE}${path}`, { ...options, headers: { ...headers, ...options?.headers } })
+      } catch {
+        return { ok: false, error: '网络请求失败' }
+      }
       if (res.status === 401) {
         onUnauthorizedRef.current?.()
         return { ok: false, error: '未登录或登录已过期' }
       }
-      const json = await res.json() as any
-      return json
+      try {
+        const json = await res.json() as any
+        return json
+      } catch {
+        return { ok: false, error: `请求失败 (${res.status})` }
+      }
     },
     [token],
   )

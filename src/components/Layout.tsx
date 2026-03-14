@@ -6,6 +6,7 @@ import ArticleEditor from './ArticleEditor'
 import SearchPanel from './SearchPanel'
 import StatsPanel from './StatsPanel'
 import ImportDialog from './ImportDialog'
+import AiChatPanel from './AiChatPanel'
 import type { Notebook, Article } from '../types'
 
 interface Props {
@@ -25,6 +26,7 @@ export default function Layout({ token, username, onLogout }: Props) {
   const [showStats, setShowStats] = useState(false)
   const [importing, setImporting] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [showChat, setShowChat] = useState(false)
 
   const loadNotebooks = useCallback(async () => {
     const res = await get<Notebook[]>('/notebooks')
@@ -162,6 +164,15 @@ export default function Layout({ token, username, onLogout }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
           </button>
+          <button
+            onClick={() => setShowChat(!showChat)}
+            className={`p-1.5 rounded-lg hover:bg-gray-100 transition-colors ${showChat ? 'text-emerald-600 bg-emerald-50' : 'text-gray-400 hover:text-emerald-600'}`}
+            title="AI 助手"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+            </svg>
+          </button>
           <span className="text-sm text-gray-500">{username}</span>
           <button onClick={onLogout} className="text-sm text-gray-400 hover:text-red-500 transition-colors">退出</button>
         </div>
@@ -204,6 +215,17 @@ export default function Layout({ token, username, onLogout }: Props) {
               </div>
             </div>
           )}
+        </div>
+
+        {/* AI Chat Panel */}
+        <div className={`${showChat ? 'w-[380px]' : 'w-0'} transition-all duration-300 overflow-hidden border-l border-gray-200 shrink-0`}>
+          <div className="w-[380px] h-full">
+            <AiChatPanel
+              token={token}
+              onClose={() => setShowChat(false)}
+              onOpenArticle={(id) => { loadArticleDetail(id); setShowChat(false) }}
+            />
+          </div>
         </div>
       </div>
 

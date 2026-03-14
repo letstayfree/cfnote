@@ -57,6 +57,27 @@ CREATE TABLE IF NOT EXISTS usage_logs (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_usage_logs_user_action ON usage_logs(user_id, action, created_at);
+
+CREATE TABLE IF NOT EXISTS conversations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  title TEXT NOT NULL DEFAULT '新对话',
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  conversation_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  sources TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
 `
 
 // POST /api/init - Initialize database tables
