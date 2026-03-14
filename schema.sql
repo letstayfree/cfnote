@@ -77,3 +77,9 @@ CREATE TABLE IF NOT EXISTS messages (
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id INTEGER PRIMARY KEY,
+  llm_model TEXT NOT NULL DEFAULT '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);

@@ -168,6 +168,12 @@ export default function StatsPanel({ token, onClose }: Props) {
                         <td className="text-right">{stats.usage.ai_qa_7d}</td>
                         <td className="text-right font-medium">{stats.usage.ai_qa_total}</td>
                       </tr>
+                      <tr>
+                        <td className="py-1">AI 对话</td>
+                        <td className="text-right">{stats.usage.ai_chat_today}</td>
+                        <td className="text-right">{stats.usage.ai_chat_7d}</td>
+                        <td className="text-right font-medium">{stats.usage.ai_chat_total}</td>
+                      </tr>
                       <tr className="border-t border-gray-200">
                         <td className="py-1">向量化</td>
                         <td className="text-right" colSpan={2} />
@@ -186,6 +192,24 @@ export default function StatsPanel({ token, onClose }: Props) {
                     <div>
                       <p className="text-xs text-gray-400 mb-2">近7天调用趋势</p>
                       <StackedBarChart data={stats.daily_trend} />
+                    </div>
+                  )}
+
+                  {/* Per-model usage */}
+                  {stats.usage.model_usage && stats.usage.model_usage.length > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-400 mb-2">模型调用统计</p>
+                      <div className="space-y-1.5">
+                        {stats.usage.model_usage.map((m) => (
+                          <div key={m.model} className="flex items-center justify-between text-xs">
+                            <span className="text-gray-500 font-mono truncate max-w-[200px]">{fmtModel(m.model)}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-gray-400">今日 {m.today}</span>
+                              <span className="font-medium text-gray-700">7天 {m.week}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -236,25 +260,31 @@ function MiniBarChart({ data, color }: { data: { label: string; value: number }[
   )
 }
 
-function StackedBarChart({ data }: { data: { date: string; search: number; ai_qa: number }[] }) {
-  const max = Math.max(...data.map((d) => d.search + d.ai_qa), 1)
+function StackedBarChart({ data }: { data: { date: string; search: number; ai_qa: number; ai_chat?: number }[] }) {
+  const max = Math.max(...data.map((d) => d.search + d.ai_qa + (d.ai_chat ?? 0)), 1)
   return (
     <div className="flex items-end gap-1 h-16">
       {data.map((d, i) => {
-        const total = d.search + d.ai_qa
+        const total = d.search + d.ai_qa + (d.ai_chat ?? 0)
         const searchH = total > 0 ? (d.search / max) * 48 : 0
         const aiH = total > 0 ? (d.ai_qa / max) * 48 : 0
+        const chatH = total > 0 ? ((d.ai_chat ?? 0) / max) * 48 : 0
         return (
           <div key={i} className="flex-1 flex flex-col items-center gap-1">
             <div className="w-full flex flex-col items-center justify-end" style={{ height: '48px' }}>
               <div
                 className="w-full max-w-[28px] rounded-t"
-                style={{ height: `${Math.max(total > 0 ? 2 : 0, aiH)}px`, backgroundColor: '#3b82f6' }}
+                style={{ height: `${Math.max(chatH > 0 ? 2 : 0, chatH)}px`, backgroundColor: '#8b5cf6' }}
+                title={`AI对话: ${d.ai_chat ?? 0}`}
+              />
+              <div
+                className="w-full max-w-[28px]"
+                style={{ height: `${Math.max(aiH > 0 ? 2 : 0, aiH)}px`, backgroundColor: '#3b82f6' }}
                 title={`AI问答: ${d.ai_qa}`}
               />
               <div
                 className="w-full max-w-[28px]"
-                style={{ height: `${Math.max(total > 0 ? 2 : 0, searchH)}px`, backgroundColor: '#10b981' }}
+                style={{ height: `${Math.max(searchH > 0 ? 2 : 0, searchH)}px`, backgroundColor: '#10b981' }}
                 title={`搜索: ${d.search}`}
               />
             </div>
@@ -265,7 +295,8 @@ function StackedBarChart({ data }: { data: { date: string; search: number; ai_qa
       {/* Legend */}
       <div className="flex flex-col gap-0.5 ml-1 text-[10px] shrink-0 justify-end pb-4">
         <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-500" />搜索</div>
-        <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500" />AI</div>
+        <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-blue-500" />问答</div>
+        <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-violet-500" />对话</div>
       </div>
     </div>
   )

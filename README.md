@@ -30,7 +30,7 @@
 | 数据库 | Cloudflare D1 (边缘 SQLite) |
 | 向量搜索 | Cloudflare Vectorize (1024维, cosine) |
 | 嵌入模型 | `@cf/baai/bge-m3` (多语言) |
-| 文本生成 | `@cf/meta/llama-3.1-8b-instruct` |
+| 文本生成 | 可在设置页面切换，默认 `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
 
 ## 核心功能
 
@@ -39,8 +39,9 @@
 - **自动向量化**：文章保存后自动分块（500字/块）→ 嵌入 → 存入 Vectorize
 - **语义搜索**：基于向量相似度的自然语言搜索，不消耗 LLM 额度
 - **AI 多轮对话**：右侧常驻聊天面板，支持基于知识库的多轮问答，历史对话持久化
+- **AI 模型设置**：支持切换 Workers AI 模型（Llama 3.1 8B / Llama 3.3 70B / DeepSeek R1 32B / QwQ 32B），推理模型自动清理 `<think>` 标签
 - **URL 导入**：通过 Jina Reader 抓取网页内容并自动向量化入库
-- **统计仪表盘**：实时查看知识库规模、Workers AI 额度消耗、向量存储使用率和调用次数趋势
+- **统计仪表盘**：实时查看知识库规模、Workers AI 额度消耗、向量存储使用率、调用次数趋势和按模型分组的调用统计
 - **首次初始化引导**：自动检测系统状态，引导创建数据库和用户
 
 ## 免费额度适配
@@ -52,6 +53,8 @@
 | 向量存储 | 1,433,600 维 | 5,000,000 维 | 28.7% |
 | 向量查询 | 3,072,000 维/月 | 30,000,000 维/月 | 10.2% |
 | Workers AI | ~215 neurons/天 | 10,000 neurons/天 | 2.15% |
+
+> 实际 neurons 消耗取决于所选模型：Llama 3.1 8B (~15/次) 最节省，DeepSeek R1 32B (~178/次) 最高。
 | D1 读写 | <5,000 行/天 | 5,000,000 读 + 100,000 写/天 | <0.1% |
 
 ## 部署
@@ -121,8 +124,9 @@ npm run deploy
 
 - **概览卡片**：笔记本数、文章数、已索引文章数、向量存储使用率
 - **Workers AI 额度**：今日 neurons 消耗进度条、按模型细分、近7天趋势图
-- **使用量统计**：搜索/AI对话 的今日/7天/累计调用次数，以及向量化、导入次数
-- **7天趋势**：纯 CSS 柱状图，展示近7天搜索和AI对话的调用走势
+- **使用量统计**：搜索/AI问答/AI对话 的今日/7天/累计调用次数，以及向量化、导入次数
+- **模型调用统计**：按模型分组的今日/7天调用次数（来自本地日志，无需 CF API Token）
+- **7天趋势**：纯 CSS 柱状图，展示近7天搜索、AI问答和AI对话的调用走势
 
 ### 环境变量（可选）
 
@@ -182,14 +186,21 @@ wrangler pages secret put CF_ACCOUNT_ID
     "ai_qa_today": 3,           // AI问答 — 今日
     "ai_qa_7d": 18,             // AI问答 — 近7天
     "ai_qa_total": 95,          // AI问答 — 累计
+    "ai_chat_today": 5,         // AI对话 — 今日
+    "ai_chat_7d": 22,           // AI对话 — 近7天
+    "ai_chat_total": 110,       // AI对话 — 累计
     "vectorize_total": 42,      // 向量化 — 累计
-    "import_total": 6           // URL导入 — 累计
+    "import_total": 6,          // URL导入 — 累计
+    "model_usage": [            // 按模型分组的调用统计
+      { "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "today": 7, "week": 35 },
+      { "model": "@cf/qwen/qwq-32b", "today": 1, "week": 5 }
+    ]
   },
 
   // ---- 7天趋势 ----
   "daily_trend": [
-    { "date": "2026-03-08", "search": 5, "ai_qa": 2 },
-    { "date": "2026-03-09", "search": 8, "ai_qa": 1 }
+    { "date": "2026-03-08", "search": 5, "ai_qa": 2, "ai_chat": 3 },
+    { "date": "2026-03-09", "search": 8, "ai_qa": 1, "ai_chat": 4 }
     // ...共7天
   ]
 }
@@ -207,7 +218,7 @@ interface Stats {
   vector_usage_percent: number
   ai_usage: StatsAiUsage | null
   usage: StatsUsage
-  daily_trend: { date: string; search: number; ai_qa: number }[]
+  daily_trend: { date: string; search: number; ai_qa: number; ai_chat: number }[]
 }
 
 interface StatsAiUsage {
@@ -232,8 +243,12 @@ interface StatsUsage {
   ai_qa_today: number
   ai_qa_7d: number
   ai_qa_total: number
+  ai_chat_today: number
+  ai_chat_7d: number
+  ai_chat_total: number
   vectorize_total: number
   import_total: number
+  model_usage: { model: string; today: number; week: number }[]
 }
 ```
 
@@ -244,8 +259,8 @@ interface StatsUsage {
 | 接口 | action 值 | 触发时机 |
 |------|----------|---------|
 | `POST /api/search` | `search` | 语义搜索成功返回结果后 |
-| `POST /api/search/ai` | `ai_qa` | AI问答成功生成回答后 |
-| `POST /api/conversations/:id/messages` | `ai_chat` | AI多轮对话生成回答后 |
+| `POST /api/search/ai` | `ai_qa` | AI问答成功生成回答后（记录模型） |
+| `POST /api/conversations/:id/messages` | `ai_chat` | AI多轮对话生成回答后（记录模型） |
 | `POST /api/articles` 向量化 | `vectorize` | 文章向量化成功写入 Vectorize 后 |
 | `POST /api/articles/import` | `import` | URL导入文章成功后 |
 
@@ -255,11 +270,32 @@ interface StatsUsage {
 CREATE TABLE IF NOT EXISTS usage_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
-  action TEXT NOT NULL,       -- 'search' | 'ai_qa' | 'vectorize' | 'import'
+  action TEXT NOT NULL,       -- 'search' | 'ai_qa' | 'ai_chat' | 'vectorize' | 'import'
+  model TEXT,                 -- AI 请求使用的模型 ID（仅 ai_qa/ai_chat 有值）
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_usage_logs_user_action ON usage_logs(user_id, action, created_at);
 ```
+
+## AI 模型设置
+
+点击顶栏右侧的齿轮图标打开设置面板，可切换 AI 对话和问答使用的 LLM 模型。设置保存后立即生效，后续所有 AI 请求将使用新模型。
+
+### 可用模型
+
+| 模型 | 类型 | 单次消耗 | 说明 |
+|------|------|---------|------|
+| Llama 3.1 8B | 通用 | ~15 neurons | 轻量快速，适合简单问答 |
+| Llama 3.3 70B | 通用 | ~88 neurons | 大模型，综合能力强（默认） |
+| DeepSeek R1 32B | 推理 | ~178 neurons | 推理能力强，适合复杂分析 |
+| QwQ 32B | 推理 | ~87 neurons | 推理型，中文表现优秀 |
+
+推理模型（DeepSeek R1、QwQ）的输出中可能包含 `<think>...</think>` 思维过程标签，系统会自动清理后再返回给用户。
+
+### 设置接口
+
+- `GET /api/settings` — 获取当前用户设置（未设置时返回默认值）
+- `PUT /api/settings` — 更新设置，请求体 `{ "llm_model": "<model_id>" }`，仅接受上述4个模型
 
 ## 开发与调试
 
@@ -310,9 +346,10 @@ cfnote/
 ├── functions/                  # 后端 Pages Functions
 │   ├── api/
 │   │   ├── _middleware.ts      # JWT 认证中间件
-│   │   ├── _utils.ts          # 工具函数（JWT/哈希/分块）
+│   │   ├── _utils.ts          # 工具函数（JWT/哈希/分块/模型管理）
 │   │   ├── status.ts          # GET  /api/status
 │   │   ├── init.ts            # POST /api/init（建表，含 usage_logs）
+│   │   ├── settings.ts        # GET/PUT /api/settings（模型设置）
 │   │   ├── auth/
 │   │   │   ├── register.ts    # POST /api/auth/register
 │   │   │   └── login.ts       # POST /api/auth/login
@@ -345,6 +382,7 @@ cfnote/
 │   │   ├── AiChatPanel.tsx    # AI 多轮对话面板
 │   │   ├── SearchPanel.tsx    # 语义搜索面板
 │   │   ├── StatsPanel.tsx     # 统计仪表盘面板
+│   │   ├── SettingsPanel.tsx  # AI 模型设置面板
 │   │   └── ImportDialog.tsx   # URL导入对话框
 │   ├── hooks/
 │   │   ├── useAuth.ts         # 登录状态管理

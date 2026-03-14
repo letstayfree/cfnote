@@ -78,6 +78,12 @@ CREATE TABLE IF NOT EXISTS messages (
   FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id INTEGER PRIMARY KEY,
+  llm_model TEXT NOT NULL DEFAULT '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 `
 
 // POST /api/init - Initialize database tables
@@ -90,6 +96,12 @@ export const onRequestPost: PagesFunction<{ DB: D1Database }> = async ({ env }) 
     for (const sql of statements) {
       await env.DB.prepare(sql).run()
     }
+
+    // Migration: add model column to usage_logs (safe — ignore if exists)
+    try {
+      await env.DB.prepare('ALTER TABLE usage_logs ADD COLUMN model TEXT').run()
+    } catch { /* column already exists */ }
+
     return ok({ message: '数据库初始化成功' })
   } catch (e: any) {
     return err('初始化失败: ' + e.message, 500)

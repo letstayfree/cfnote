@@ -98,6 +98,19 @@ export interface AuthState {
   username: string | null
 }
 
+// ---- Settings ----
+export interface UserSettings {
+  llm_model: string
+}
+
+export interface ModelInfo {
+  id: string
+  label: string
+  description: string
+  type: '通用' | '推理'
+  cost: string
+}
+
 // ---- Stats ----
 export interface StatsAiModel {
   modelId: string
@@ -121,8 +134,12 @@ export interface StatsUsage {
   ai_qa_today: number
   ai_qa_7d: number
   ai_qa_total: number
+  ai_chat_today: number
+  ai_chat_7d: number
+  ai_chat_total: number
   vectorize_total: number
   import_total: number
+  model_usage: { model: string; today: number; week: number }[]
 }
 
 export interface Stats {
@@ -134,5 +151,5 @@ export interface Stats {
   vector_usage_percent: number
   ai_usage: StatsAiUsage | null
   usage: StatsUsage
-  daily_trend: { date: string; search: number; ai_qa: number }[]
+  daily_trend: { date: string; search: number; ai_qa: number; ai_chat: number }[]
 }

@@ -5,6 +5,7 @@ import ArticleList from './ArticleList'
 import ArticleEditor from './ArticleEditor'
 import SearchPanel from './SearchPanel'
 import StatsPanel from './StatsPanel'
+import SettingsPanel from './SettingsPanel'
 import ImportDialog from './ImportDialog'
 import AiChatPanel from './AiChatPanel'
 import type { Notebook, Article } from '../types'
@@ -24,6 +25,7 @@ export default function Layout({ token, username, onLogout }: Props) {
   const [showSearch, setShowSearch] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [showStats, setShowStats] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [importing, setImporting] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [showChat, setShowChat] = useState(false)
@@ -165,6 +167,16 @@ export default function Layout({ token, username, onLogout }: Props) {
             </svg>
           </button>
           <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-emerald-600 transition-colors"
+            title="设置"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+          <button
             onClick={() => setShowChat(!showChat)}
             className={`p-1.5 rounded-lg hover:bg-gray-100 transition-colors ${showChat ? 'text-emerald-600 bg-emerald-50' : 'text-gray-400 hover:text-emerald-600'}`}
             title="AI 助手"
@@ -235,6 +247,10 @@ export default function Layout({ token, username, onLogout }: Props) {
 
       {showStats && (
         <StatsPanel token={token} onClose={() => setShowStats(false)} />
+      )}
+
+      {showSettings && (
+        <SettingsPanel token={token} onClose={() => setShowSettings(false)} />
       )}
 
       {showImport && (

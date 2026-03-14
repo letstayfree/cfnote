@@ -1,5 +1,44 @@
 import type { Env } from '../../src/types'
 
+// ---- Allowed LLM Models ----
+
+export interface AllowedModel {
+  id: string
+  label: string
+  description: string
+  type: '通用' | '推理'
+  cost: string
+  isReasoning: boolean
+}
+
+export const ALLOWED_MODELS: AllowedModel[] = [
+  { id: '@cf/meta/llama-3.1-8b-instruct', label: 'Llama 3.1 8B', description: '轻量快速，适合简单问答', type: '通用', cost: '~15 neurons', isReasoning: false },
+  { id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast', label: 'Llama 3.3 70B', description: '大模型，综合能力强', type: '通用', cost: '~88 neurons', isReasoning: false },
+  { id: '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b', label: 'DeepSeek R1 32B', description: '推理能力强，适合复杂分析', type: '推理', cost: '~178 neurons', isReasoning: true },
+  { id: '@cf/qwen/qwq-32b', label: 'QwQ 32B', description: '推理型，中文表现优秀', type: '推理', cost: '~87 neurons', isReasoning: true },
+]
+
+export const DEFAULT_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+
+export function isAllowedModel(modelId: string): boolean {
+  return ALLOWED_MODELS.some(m => m.id === modelId)
+}
+
+export async function getUserModel(env: Env, userId: number): Promise<string> {
+  const row = await env.DB.prepare(
+    'SELECT llm_model FROM user_settings WHERE user_id = ?'
+  ).bind(userId).first<{ llm_model: string }>()
+  return row?.llm_model ?? DEFAULT_MODEL
+}
+
+export function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+}
+
+export function isReasoningModel(modelId: string): boolean {
+  return ALLOWED_MODELS.find(m => m.id === modelId)?.isReasoning ?? false
+}
+
 // ---- Timeout Helper ----
 
 export function withTimeout<T>(promise: Promise<T>, ms: number, label = 'operation'): Promise<T> {

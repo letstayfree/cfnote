@@ -52,9 +52,32 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       ai_qa_today: usageMap.ai_qa?.today ?? 0,
       ai_qa_7d: usageMap.ai_qa?.week ?? 0,
       ai_qa_total: usageMap.ai_qa?.total ?? 0,
+      ai_chat_today: usageMap.ai_chat?.today ?? 0,
+      ai_chat_7d: usageMap.ai_chat?.week ?? 0,
+      ai_chat_total: usageMap.ai_chat?.total ?? 0,
       vectorize_total: usageMap.vectorize?.total ?? 0,
       import_total: usageMap.import?.total ?? 0,
+      model_usage: [] as { model: string; today: number; week: number }[],
     }
+
+    // Per-model usage breakdown from local logs
+    try {
+      const modelRows = await env.DB.prepare(`
+        SELECT model,
+          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as today,
+          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as week
+        FROM usage_logs
+        WHERE model IS NOT NULL AND action IN ('ai_chat', 'ai_qa')
+        GROUP BY model
+        ORDER BY week DESC
+      `).bind(todayStart, sevenDaysAgo).all<{ model: string; today: number; week: number }>()
+
+      usage.model_usage = (modelRows.results ?? []).map(r => ({
+        model: r.model,
+        today: r.today,
+        week: r.week,
+      }))
+    } catch { /* model column may not exist yet */ }
 
     // 4. Daily trend (last 7 days)
     const trendRows = await env.DB.prepare(`
@@ -65,15 +88,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       ORDER BY date(created_at)
     `).bind(sevenDaysAgo).all<{ date: string; action: string; c: number }>()
 
-    const trendMap: Record<string, { search: number; ai_qa: number }> = {}
+    const trendMap: Record<string, { search: number; ai_qa: number; ai_chat: number }> = {}
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 86400000).toISOString().slice(0, 10)
-      trendMap[d] = { search: 0, ai_qa: 0 }
+      trendMap[d] = { search: 0, ai_qa: 0, ai_chat: 0 }
     }
     for (const r of trendRows.results ?? []) {
       if (trendMap[r.date]) {
         if (r.action === 'search') trendMap[r.date].search = r.c
         if (r.action === 'ai_qa') trendMap[r.date].ai_qa = r.c
+        if (r.action === 'ai_chat') trendMap[r.date].ai_chat = r.c
       }
     }
     const daily_trend = Object.entries(trendMap).map(([date, v]) => ({ date, ...v }))

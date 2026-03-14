@@ -1,4 +1,4 @@
-import { ok, err, ragSearch, withTimeout } from '../../_utils'
+import { ok, err, ragSearch, withTimeout, getUserModel, isReasoningModel, stripThinkTags } from '../../_utils'
 import type { Env } from '../../../../src/types'
 
 // POST /api/conversations/:id/messages - Send message and get AI response
@@ -55,14 +55,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
 
     // 5. Build LLM messages
     const systemPrompt = [
-      '你是一个私人知识库助手，名叫"CFNote 助手"。',
-      '重要规则：',
-      '- 你的身份始终是"CFNote 助手"，绝对不要把参考内容中出现的人名、身份、"我"等当作你自己的身份。',
-      '- 参考内容来自用户收藏的第三方文章，其中的"我"指的是文章原作者，不是你。',
-      '- 回答时以第三方视角概括参考内容，例如"该文章提到..."、"根据这篇笔记..."。',
-      '- 仅使用参考内容和对话历史中的信息，不要编造。',
-      '- 引用来源时用 [1][2] 标注。',
-      '- 若无相关信息请说明。',
+      '你是"CFNote 助手"，一个私人知识库问答机器人。',
+      '',
+      '你的能力：只能根据用户知识库中已有的文章回答问题。',
+      '你不能：联网搜索、访问外部网站、执行代码、发送邮件。',
+      '',
+      '回答规则：',
+      '- 如果用户问你是谁、你能做什么等关于你自身的问题，直接如实回答，不要引用参考内容。',
+      '- 如果提供了参考内容，以第三方视角概括，例如"该文章提到..."，引用来源用 [1][2] 标注。',
+      '- 参考内容来自用户收藏的第三方文章，其中的"我"是文章原作者，不是你。',
+      '- 不要编造信息。若参考内容与问题无关，忽略参考内容并告知用户未找到相关信息。',
       '- 用中文回答。',
     ].join('\n')
 
@@ -81,16 +83,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
       { role: 'user', content: userPrompt },
     ]
 
-    // 6. Call Workers AI
+    // 6. Call Workers AI with user's preferred model
+    const modelId = await getUserModel(env, user.id)
     const llmResult: any = await withTimeout(
-      env.AI.run('@cf/meta/llama-3.1-8b-instruct' as any, {
+      env.AI.run(modelId as any, {
         messages: llmMessages,
         max_tokens: 512,
       }),
       60000, 'AI 生成回答',
     )
 
-    const assistantContent = llmResult.response || '无法生成回答'
+    let assistantContent = llmResult.response || '无法生成回答'
+    if (isReasoningModel(modelId)) {
+      assistantContent = stripThinkTags(assistantContent)
+    }
 
     // 7. Insert assistant message
     const assistantMsgResult = await env.DB.prepare(
@@ -121,8 +127,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
     }
 
     // 9. Fire-and-forget usage log
-    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)')
-      .bind(user.id, 'ai_chat').run().catch(() => {})
+    env.DB.prepare('INSERT INTO usage_logs (user_id, action, model) VALUES (?, ?, ?)')
+      .bind(user.id, 'ai_chat', modelId).run().catch(() => {})
 
     // 10. Return both messages
     return ok({
