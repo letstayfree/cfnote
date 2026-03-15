@@ -118,25 +118,7 @@ export async function jinaSearch(env: Env, query: string): Promise<WebSearchResu
   }))
 }
 
-// ---- Web Search Intent Detection ----
 
-const WEB_SEARCH_PATTERNS = [
-  /^(帮我|请|麻烦)?(搜索|搜一下|搜一搜|查一下|查找|查询|网上[搜找查]|上网[搜找查]|联网[搜找查])/,
-  /^(search|google|look\s*up|web\s*search)\b/i,
-]
-
-const WEB_SEARCH_STRIP = /^(帮我|请|麻烦)?(搜索|搜一下|搜一搜|查一下|查找|查询|网上[搜找查]|上网[搜找查]|联网[搜找查])(一下)?\s*/
-
-export function detectWebSearchIntent(text: string): { isWebSearch: boolean; query: string } {
-  const trimmed = text.trim()
-  for (const pattern of WEB_SEARCH_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      const query = trimmed.replace(WEB_SEARCH_STRIP, '').replace(/^(search|google|look\s*up|web\s*search)\s*/i, '').trim()
-      return { isWebSearch: true, query: query || trimmed }
-    }
-  }
-  return { isWebSearch: false, query: trimmed }
-}
 
 // ---- Timeout Helper ----
 
