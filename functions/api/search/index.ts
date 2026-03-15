@@ -1,4 +1,4 @@
-import { ok, err } from '../_utils'
+import { ok, err, logSystem } from '../_utils'
 import type { Env } from '../../../src/types'
 
 // POST /api/search - Semantic search (vector only, no LLM)
@@ -82,7 +82,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     }
 
     // Fire-and-forget usage log
-    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(user.id, 'search').run().catch(() => {})
+    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(user.id, 'search').run()
+      .catch(e => logSystem(env, 'error', 'search', 'usage_log 写入失败', { error: String(e) }))
 
     return ok({
       results: [...seen.values()].sort((a, b) => b.score - a.score),

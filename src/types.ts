@@ -98,6 +98,23 @@ export interface AuthState {
   username: string | null
 }
 
+// ---- System Logs ----
+export interface SystemLog {
+  id: number
+  level: 'error' | 'warn' | 'info'
+  source: string
+  message: string
+  detail: string | null
+  created_at: string
+}
+
+export interface SystemLogsResponse {
+  logs: SystemLog[]
+  total: number
+  limit: number
+  offset: number
+}
+
 // ---- Settings ----
 export interface Settings {
   llm_model: string

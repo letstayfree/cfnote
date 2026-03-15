@@ -39,6 +39,18 @@ export function isReasoningModel(modelId: string): boolean {
   return ALLOWED_MODELS.find(m => m.id === modelId)?.isReasoning ?? false
 }
 
+// ---- System Logging ----
+
+export function logSystem(
+  env: Env, level: 'error' | 'warn' | 'info',
+  source: string, message: string, detail?: unknown,
+) {
+  env.DB.prepare(
+    'INSERT INTO system_logs (level, source, message, detail) VALUES (?, ?, ?, ?)'
+  ).bind(level, source, message, detail ? JSON.stringify(detail) : null)
+    .run().catch(() => {})
+}
+
 // ---- Timeout Helper ----
 
 export function withTimeout<T>(promise: Promise<T>, ms: number, label = 'operation'): Promise<T> {

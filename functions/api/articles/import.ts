@@ -1,4 +1,4 @@
-import { ok, err, contentHash } from '../_utils'
+import { ok, err, contentHash, logSystem } from '../_utils'
 import { vectorizeArticle } from './index'
 import type { Env } from '../../../src/types'
 
@@ -78,7 +78,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
     }
 
     // Fire-and-forget usage log
-    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(user.id, 'import').run().catch(() => {})
+    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(user.id, 'import').run()
+      .catch(e => logSystem(env, 'error', 'import', 'usage_log 写入失败', { error: String(e) }))
 
     const article = await env.DB.prepare('SELECT * FROM articles WHERE id = ?').bind(articleId).first()
     return ok({ ...article as any, vectorize_error })

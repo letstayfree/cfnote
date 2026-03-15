@@ -6,6 +6,7 @@ import ArticleEditor from './ArticleEditor'
 import SearchPanel from './SearchPanel'
 import StatsPanel from './StatsPanel'
 import SettingsPanel from './SettingsPanel'
+import SystemLogsPanel from './SystemLogsPanel'
 import ImportDialog from './ImportDialog'
 import AiChatPanel from './AiChatPanel'
 import type { Notebook, Article } from '../types'
@@ -26,6 +27,7 @@ export default function Layout({ token, username, onLogout }: Props) {
   const [showImport, setShowImport] = useState(false)
   const [showStats, setShowStats] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showLogs, setShowLogs] = useState(false)
   const [importing, setImporting] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [showChat, setShowChat] = useState(false)
@@ -177,6 +179,15 @@ export default function Layout({ token, username, onLogout }: Props) {
             </svg>
           </button>
           <button
+            onClick={() => setShowLogs(!showLogs)}
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-emerald-600 transition-colors"
+            title="系统日志"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+          </button>
+          <button
             onClick={() => setShowChat(!showChat)}
             className={`p-1.5 rounded-lg hover:bg-gray-100 transition-colors ${showChat ? 'text-emerald-600 bg-emerald-50' : 'text-gray-400 hover:text-emerald-600'}`}
             title="AI 助手"
@@ -251,6 +262,10 @@ export default function Layout({ token, username, onLogout }: Props) {
 
       {showSettings && (
         <SettingsPanel token={token} onClose={() => setShowSettings(false)} />
+      )}
+
+      {showLogs && (
+        <SystemLogsPanel token={token} onClose={() => setShowLogs(false)} />
       )}
 
       {showImport && (

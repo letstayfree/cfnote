@@ -1,4 +1,4 @@
-import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags } from '../../_utils'
+import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags, logSystem } from '../../_utils'
 import type { Env } from '../../../../src/types'
 
 // POST /api/conversations/:id/messages - Send message and get AI response
@@ -128,7 +128,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
 
     // 9. Fire-and-forget usage log
     env.DB.prepare('INSERT INTO usage_logs (user_id, action, model) VALUES (?, ?, ?)')
-      .bind(user.id, 'ai_chat', modelId).run().catch(() => {})
+      .bind(user.id, 'ai_chat', modelId).run()
+      .catch(e => logSystem(env, 'error', 'ai_chat', 'usage_log 写入失败', { error: String(e) }))
 
     // 10. Return both messages
     return ok({

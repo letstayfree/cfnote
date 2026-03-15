@@ -1,4 +1,4 @@
-import { ok, err, chunkText, contentHash } from '../_utils'
+import { ok, err, chunkText, contentHash, logSystem } from '../_utils'
 import type { Env } from '../../../src/types'
 
 // POST /api/articles - Create article
@@ -93,7 +93,8 @@ async function vectorizeArticle(
     ])
 
     // Fire-and-forget usage log
-    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(userId, 'vectorize').run().catch(() => {})
+    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(userId, 'vectorize').run()
+      .catch(e => logSystem(env, 'error', 'vectorize', 'usage_log 写入失败', { error: String(e) }))
 
     return null
   } catch (e: any) {
