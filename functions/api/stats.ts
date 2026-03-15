@@ -28,8 +28,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
 
     // 3. Usage logs from D1
     const now = new Date()
-    const todayStart = now.toISOString().slice(0, 10) + 'T00:00:00'
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10) + 'T00:00:00'
+    const todayStart = now.toISOString().slice(0, 10) + ' 00:00:00'
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10) + ' 00:00:00'
 
     const usageRows = await env.DB.prepare(`
       SELECT action,
