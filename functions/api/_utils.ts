@@ -31,6 +31,11 @@ export async function getSettingValue(env: Env, key: string, defaultValue: strin
   return row?.value ?? defaultValue
 }
 
+export async function getApiKey(env: Env, keyName: string): Promise<string | undefined> {
+  const fromSettings = await getSettingValue(env, keyName, '')
+  return fromSettings || (env as any)[keyName.toUpperCase()] || undefined
+}
+
 export function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
 }
@@ -49,6 +54,88 @@ export function logSystem(
     'INSERT INTO system_logs (level, source, message, detail) VALUES (?, ?, ?, ?)'
   ).bind(level, source, message, detail ? JSON.stringify(detail) : null)
     .run().catch(() => {})
+}
+
+// ---- Jina API (shared) ----
+
+async function jinaHeaders(env: Env, extra?: Record<string, string>): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Accept': 'application/json', ...extra }
+  const key = await getApiKey(env, 'jina_api_key')
+  if (key) headers['Authorization'] = `Bearer ${key}`
+  return headers
+}
+
+export interface JinaReadResult {
+  title: string
+  content: string
+}
+
+/** Fetch & parse a web page via Jina Reader (r.jina.ai). Returns title + markdown content. */
+export async function jinaReadUrl(env: Env, url: string): Promise<JinaReadResult> {
+  const headers = await jinaHeaders(env, { 'X-Return-Format': 'markdown' })
+  const res = await fetch(`https://r.jina.ai/${url.trim()}`, { headers })
+  if (!res.ok) throw new Error(`Jina Reader 请求失败 (HTTP ${res.status})`)
+
+  const contentType = res.headers.get('Content-Type') || ''
+  if (contentType.includes('application/json')) {
+    const json = await res.json() as any
+    return {
+      title: json.data?.title || json.title || new URL(url).hostname,
+      content: json.data?.content || json.content || '',
+    }
+  }
+
+  // Non-JSON fallback (plain text / markdown)
+  const text = await res.text()
+  if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+    throw new Error('Jina Reader 无法抓取该页面（目标网站可能阻止了抓取）')
+  }
+  const headingMatch = text.match(/^#\s+(.+)$/m)
+  return {
+    title: headingMatch?.[1]?.trim() || new URL(url).hostname,
+    content: text,
+  }
+}
+
+export interface WebSearchResult {
+  title: string
+  url: string
+  content: string
+}
+
+/** Search the web via Jina Search (s.jina.ai). Returns top 5 results. */
+export async function jinaSearch(env: Env, query: string): Promise<WebSearchResult[]> {
+  const headers = await jinaHeaders(env)
+  const res = await fetch(`https://s.jina.ai/${encodeURIComponent(query)}`, { headers })
+  if (!res.ok) throw new Error(`Jina Search 请求失败 (HTTP ${res.status})`)
+
+  const json = await res.json() as any
+  const items = json.data ?? json.results ?? []
+  return items.slice(0, 5).map((item: any) => ({
+    title: item.title || '',
+    url: item.url || '',
+    content: (item.content || item.description || '').slice(0, 1000),
+  }))
+}
+
+// ---- Web Search Intent Detection ----
+
+const WEB_SEARCH_PATTERNS = [
+  /^(帮我|请|麻烦)?(搜索|搜一下|搜一搜|查一下|查找|查询|网上[搜找查]|上网[搜找查]|联网[搜找查])/,
+  /^(search|google|look\s*up|web\s*search)\b/i,
+]
+
+const WEB_SEARCH_STRIP = /^(帮我|请|麻烦)?(搜索|搜一下|搜一搜|查一下|查找|查询|网上[搜找查]|上网[搜找查]|联网[搜找查])(一下)?\s*/
+
+export function detectWebSearchIntent(text: string): { isWebSearch: boolean; query: string } {
+  const trimmed = text.trim()
+  for (const pattern of WEB_SEARCH_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      const query = trimmed.replace(WEB_SEARCH_STRIP, '').replace(/^(search|google|look\s*up|web\s*search)\s*/i, '').trim()
+      return { isWebSearch: true, query: query || trimmed }
+    }
+  }
+  return { isWebSearch: false, query: trimmed }
 }
 
 // ---- Timeout Helper ----

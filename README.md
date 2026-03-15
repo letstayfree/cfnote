@@ -39,6 +39,7 @@
 - **自动向量化**：文章保存后自动分块（500字/块）→ 嵌入 → 存入 Vectorize
 - **语义搜索**：基于向量相似度的自然语言搜索，不消耗 LLM 额度
 - **AI 多轮对话**：右侧常驻聊天面板，支持基于知识库的多轮问答，历史对话持久化
+- **联网搜索**：AI 助手支持联网搜索，输入"搜索 xxx"触发，搜索结果可一键保存为笔记
 - **AI 模型设置**：支持切换 Workers AI 模型（Llama 3.1 8B / Llama 3.3 70B / DeepSeek R1 32B / QwQ 32B），推理模型自动清理 `<think>` 标签
 - **URL 导入**：通过 Jina Reader 抓取网页内容并自动向量化入库
 - **统计仪表盘**：实时查看知识库规模、Workers AI 额度消耗、向量存储使用率、调用次数趋势和按模型分组的调用统计
@@ -277,11 +278,13 @@ CREATE TABLE IF NOT EXISTS usage_logs (
 CREATE INDEX IF NOT EXISTS idx_usage_logs_user_action ON usage_logs(user_id, action, created_at);
 ```
 
-## AI 模型设置
+## 设置
 
-点击顶栏右侧的齿轮图标打开设置面板，可切换 AI 对话和问答使用的 LLM 模型。设置保存后立即生效，后续所有 AI 请求将使用新模型。
+点击顶栏右侧的齿轮图标打开设置面板。
 
-### 可用模型
+### AI 模型
+
+可切换 AI 对话和问答使用的 LLM 模型。设置保存后立即生效。
 
 | 模型 | 类型 | 单次消耗 | 说明 |
 |------|------|---------|------|
@@ -292,10 +295,24 @@ CREATE INDEX IF NOT EXISTS idx_usage_logs_user_action ON usage_logs(user_id, act
 
 推理模型（DeepSeek R1、QwQ）的输出中可能包含 `<think>...</think>` 思维过程标签，系统会自动清理后再返回给用户。
 
+### API Keys
+
+在设置页面中可配置第三方 API Key，存储在 D1 `settings` 表中。GET 接口自动脱敏（仅返回末尾 4 位），PUT 接口跳过掩码值不覆盖。
+
+| Key | 用途 | 获取方式 |
+|-----|------|---------|
+| `jina_api_key` | 联网搜索 + URL 导入（Jina AI） | [jina.ai](https://jina.ai) 免费注册 |
+
+优先级：设置页面配置 > 环境变量（`JINA_API_KEY`）。不配置也可使用，但可能受 Jina 限流影响。
+
+### 联网搜索
+
+AI 助手支持联网搜索功能。在对话中输入"搜索 xxx"、"帮我查 xxx"等关键词触发。搜索使用 Jina Search API (`s.jina.ai`)，总结后可点击"保存为笔记"按钮将结果存入知识库。
+
 ### 设置接口
 
-- `GET /api/settings` — 获取当前用户设置（未设置时返回默认值）
-- `PUT /api/settings` — 更新设置，请求体 `{ "llm_model": "<model_id>" }`，仅接受上述4个模型
+- `GET /api/settings` — 获取所有设置（敏感 Key 自动脱敏）
+- `PUT /api/settings` — 批量更新设置，掩码值（`****xxxx`）自动跳过
 
 ## 开发与调试
 

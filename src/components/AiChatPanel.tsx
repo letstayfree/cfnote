@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { marked } from 'marked'
 import { useApi } from '../hooks/useApi'
-import type { Conversation, Message, SendMessageResponse } from '../types'
+import type { Conversation, Message, SendMessageResponse, Notebook, Article } from '../types'
 
 interface Props {
   token: string
@@ -20,6 +20,15 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
   const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Web search save-to-note state
+  const [webSearchMsgIds, setWebSearchMsgIds] = useState<Set<number>>(new Set())
+  const [savingMsgId, setSavingMsgId] = useState<number | null>(null)
+  const [savedMsgIds, setSavedMsgIds] = useState<Set<number>>(new Set())
+  const [saveNotebooks, setSaveNotebooks] = useState<Notebook[]>([])
+  const [saveNotebookId, setSaveNotebookId] = useState<number | null>(null)
+  const [saveTitle, setSaveTitle] = useState('')
+  const [saveBusy, setSaveBusy] = useState(false)
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -102,6 +111,10 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
         res.data!.user_message,
         res.data!.assistant_message,
       ])
+      // Track web search messages
+      if (res.data.is_web_search) {
+        setWebSearchMsgIds((prev) => new Set(prev).add(res.data!.assistant_message.id))
+      }
       // Update title if changed
       if (res.data.title_updated) {
         setActiveConversation((prev) => prev ? { ...prev, title: res.data!.title_updated! } : prev)
@@ -129,11 +142,44 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
     setSending(false)
   }
 
+  // Save web search result as note
+  const openSaveDialog = async (msgId: number) => {
+    setSavingMsgId(msgId)
+    setSaveTitle('')
+    setSaveNotebookId(null)
+    const res = await api.get<Notebook[]>('/notebooks')
+    if (res.ok && res.data) {
+      setSaveNotebooks(res.data)
+      if (res.data.length > 0) setSaveNotebookId(res.data[0].id)
+    }
+  }
+
+  const doSave = async () => {
+    if (!saveNotebookId || !savingMsgId || saveBusy) return
+    const msg = messages.find((m) => m.id === savingMsgId)
+    if (!msg) return
+    setSaveBusy(true)
+    const title = saveTitle.trim() || '联网搜索笔记'
+    const res = await api.post<Article>('/articles', {
+      notebook_id: saveNotebookId,
+      title,
+      content: msg.content,
+    })
+    if (res.ok) {
+      setSavedMsgIds((prev) => new Set(prev).add(savingMsgId))
+      setSavingMsgId(null)
+    }
+    setSaveBusy(false)
+  }
+
   // Back to list
   const goBack = () => {
     setView('list')
     setActiveConversation(null)
     setMessages([])
+    setWebSearchMsgIds(new Set())
+    setSavedMsgIds(new Set())
+    setSavingMsgId(null)
     loadConversations()
   }
 
@@ -249,12 +295,22 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
         ) : messages.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             <p className="text-sm">向 AI 助手提问吧</p>
-            <p className="text-xs mt-1">基于你的知识库内容回答</p>
+            <p className="text-xs mt-1">基于知识库回答，或输入"搜索 xxx"联网查找</p>
           </div>
         ) : (
           messages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[85%] ${msg.role === 'user' ? 'order-1' : ''}`}>
+                {/* Web search badge */}
+                {msg.role === 'assistant' && webSearchMsgIds.has(msg.id) && (
+                  <div className="flex items-center gap-1 mb-1">
+                    <svg className="w-3 h-3 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                    </svg>
+                    <span className="text-[10px] text-blue-500 font-medium">联网搜索</span>
+                  </div>
+                )}
+
                 <div
                   className={`rounded-xl px-3 py-2 text-sm ${
                     msg.role === 'user'
@@ -287,6 +343,64 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
                     ))}
                   </div>
                 )}
+
+                {/* Save as note button for web search results */}
+                {msg.role === 'assistant' && webSearchMsgIds.has(msg.id) && (
+                  <div className="mt-2">
+                    {savedMsgIds.has(msg.id) ? (
+                      <span className="text-xs text-emerald-600 flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        已保存为笔记
+                      </span>
+                    ) : savingMsgId === msg.id ? (
+                      <div className="bg-gray-50 rounded-lg p-2 space-y-2">
+                        <select
+                          value={saveNotebookId ?? ''}
+                          onChange={(e) => setSaveNotebookId(Number(e.target.value))}
+                          className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                        >
+                          {saveNotebooks.map((nb) => (
+                            <option key={nb.id} value={nb.id}>{nb.name}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="笔记标题..."
+                          value={saveTitle}
+                          onChange={(e) => setSaveTitle(e.target.value)}
+                          className="w-full text-xs border border-gray-200 rounded px-2 py-1"
+                        />
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={doSave}
+                            disabled={!saveNotebookId || saveBusy}
+                            className="flex-1 text-xs bg-emerald-500 hover:bg-emerald-600 text-white rounded py-1 disabled:opacity-50 transition-colors"
+                          >
+                            {saveBusy ? '保存中...' : '保存'}
+                          </button>
+                          <button
+                            onClick={() => setSavingMsgId(null)}
+                            className="text-xs text-gray-400 hover:text-gray-600 px-2"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => openSaveDialog(msg.id)}
+                        className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1 transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                        </svg>
+                        保存为笔记
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))
@@ -317,7 +431,7 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="输入问题..."
+            placeholder={'输入问题，或"搜索 xxx"联网查找...'}
             disabled={sending}
             className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 disabled:opacity-50 bg-white"
           />

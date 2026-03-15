@@ -55,6 +55,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       ai_chat_today: usageMap.ai_chat?.today ?? 0,
       ai_chat_7d: usageMap.ai_chat?.week ?? 0,
       ai_chat_total: usageMap.ai_chat?.total ?? 0,
+      web_search_today: usageMap.web_search?.today ?? 0,
+      web_search_7d: usageMap.web_search?.week ?? 0,
+      web_search_total: usageMap.web_search?.total ?? 0,
       vectorize_total: usageMap.vectorize?.total ?? 0,
       import_total: usageMap.import?.total ?? 0,
       model_usage: [] as { model: string; today: number; week: number }[],
@@ -88,16 +91,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       ORDER BY date(created_at)
     `).bind(sevenDaysAgo).all<{ date: string; action: string; c: number }>()
 
-    const trendMap: Record<string, { search: number; ai_qa: number; ai_chat: number }> = {}
+    const trendMap: Record<string, { search: number; ai_qa: number; ai_chat: number; web_search: number }> = {}
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 86400000).toISOString().slice(0, 10)
-      trendMap[d] = { search: 0, ai_qa: 0, ai_chat: 0 }
+      trendMap[d] = { search: 0, ai_qa: 0, ai_chat: 0, web_search: 0 }
     }
     for (const r of trendRows.results ?? []) {
       if (trendMap[r.date]) {
         if (r.action === 'search') trendMap[r.date].search = r.c
         if (r.action === 'ai_qa') trendMap[r.date].ai_qa = r.c
         if (r.action === 'ai_chat') trendMap[r.date].ai_chat = r.c
+        if (r.action === 'web_search') trendMap[r.date].web_search = r.c
       }
     }
     const daily_trend = Object.entries(trendMap).map(([date, v]) => ({ date, ...v }))

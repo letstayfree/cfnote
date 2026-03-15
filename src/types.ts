@@ -70,6 +70,8 @@ export interface SendMessageResponse {
   user_message: Message
   assistant_message: Message
   title_updated?: string
+  is_web_search?: boolean
+  web_query?: string
 }
 
 // ---- API Types ----
@@ -155,6 +157,9 @@ export interface StatsUsage {
   ai_chat_today: number
   ai_chat_7d: number
   ai_chat_total: number
+  web_search_today: number
+  web_search_7d: number
+  web_search_total: number
   vectorize_total: number
   import_total: number
   model_usage: { model: string; today: number; week: number }[]
@@ -169,5 +174,5 @@ export interface Stats {
   vector_usage_percent: number
   ai_usage: StatsAiUsage | null
   usage: StatsUsage
-  daily_trend: { date: string; search: number; ai_qa: number; ai_chat: number }[]
+  daily_trend: { date: string; search: number; ai_qa: number; ai_chat: number; web_search: number }[]
 }

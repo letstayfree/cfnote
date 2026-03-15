@@ -1,4 +1,4 @@
-import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags, logSystem } from '../../_utils'
+import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags, logSystem, detectWebSearchIntent, jinaSearch } from '../../_utils'
 import type { Env } from '../../../../src/types'
 
 // POST /api/conversations/:id/messages - Send message and get AI response
@@ -40,37 +40,73 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
       content: m.content as string,
     }))
 
-    // 4. Decide whether to do RAG search
-    // Short messages (≤ 6 chars) with existing history are likely follow-ups
-    // (e.g. "继续", "详细说说", "好的") — skip RAG to avoid injecting irrelevant noise
-    const isFollowUp = content.trim().length <= 6 && history.length > 0
+    // 4. Detect web search intent
+    const { isWebSearch, query: searchQuery } = detectWebSearchIntent(content.trim())
+
     let contextParts: string[] = []
     let sources: import('../../_utils').RagSource[] = []
+    let isWebSearchResponse = false
+    let webQuery = ''
 
-    if (!isFollowUp) {
-      const rag = await ragSearch(env, content.trim(), user.id, 5)
-      contextParts = rag.contextParts
-      sources = rag.sources
+    if (isWebSearch) {
+      // ---- Web search branch ----
+      isWebSearchResponse = true
+      webQuery = searchQuery
+      try {
+        const results = await withTimeout(
+          jinaSearch(env, searchQuery),
+          30000, '联网搜索',
+        )
+        if (results.length > 0) {
+          contextParts = results.map((r, i) =>
+            `[${i + 1}] ${r.title}\n来源: ${r.url}\n${r.content}`
+          )
+        }
+      } catch (e: any) {
+        logSystem(env, 'error', 'web_search', '联网搜索失败', { error: e.message, query: searchQuery })
+      }
+    } else {
+      // ---- RAG knowledge base branch ----
+      const isFollowUp = content.trim().length <= 6 && history.length > 0
+      if (!isFollowUp) {
+        const rag = await ragSearch(env, content.trim(), user.id, 5)
+        contextParts = rag.contextParts
+        sources = rag.sources
+      }
     }
 
     // 5. Build LLM messages
-    const systemPrompt = [
-      '你是"CFNote 助手"，一个私人知识库问答机器人。',
-      '',
-      '你的能力：只能根据用户知识库中已有的文章回答问题。',
-      '你不能：联网搜索、访问外部网站、执行代码、发送邮件。',
-      '',
-      '回答规则：',
-      '- 如果用户问你是谁、你能做什么等关于你自身的问题，直接如实回答，不要引用参考内容。',
-      '- 如果提供了参考内容，以第三方视角概括，例如"该文章提到..."，引用来源用 [1][2] 标注。',
-      '- 参考内容来自用户收藏的第三方文章，其中的"我"是文章原作者，不是你。',
-      '- 不要编造信息。若参考内容与问题无关，忽略参考内容并告知用户未找到相关信息。',
-      '- 用中文回答。',
-    ].join('\n')
+    const systemPrompt = isWebSearchResponse
+      ? [
+          '你是"CFNote 助手"，一个私人知识库问答机器人，现在正在使用联网搜索功能。',
+          '',
+          '回答规则：',
+          '- 根据提供的网络搜索结果回答用户的问题。',
+          '- 用 [1][2] 等标注引用了哪条搜索结果。',
+          '- 如果搜索结果与问题无关，如实告知用户。',
+          '- 不要编造信息。',
+          '- 用中文回答。',
+        ].join('\n')
+      : [
+          '你是"CFNote 助手"，一个私人知识库问答机器人。',
+          '',
+          '你的能力：只能根据用户知识库中已有的文章回答问题。',
+          '你不能：联网搜索、访问外部网站、执行代码、发送邮件。',
+          '',
+          '回答规则：',
+          '- 如果用户问你是谁、你能做什么等关于你自身的问题，直接如实回答，不要引用参考内容。',
+          '- 如果提供了参考内容，以第三方视角概括，例如"该文章提到..."，引用来源用 [1][2] 标注。',
+          '- 参考内容来自用户收藏的第三方文章，其中的"我"是文章原作者，不是你。',
+          '- 不要编造信息。若参考内容与问题无关，忽略参考内容并告知用户未找到相关信息。',
+          '- 用中文回答。',
+        ].join('\n')
 
     let userPrompt: string
     if (contextParts.length > 0) {
-      userPrompt = `参考内容:\n${contextParts.join('\n\n')}\n\n问题: ${content.trim()}`
+      const label = isWebSearchResponse ? '网络搜索结果' : '参考内容'
+      userPrompt = `${label}:\n${contextParts.join('\n\n')}\n\n问题: ${content.trim()}`
+    } else if (isWebSearchResponse) {
+      userPrompt = `（联网搜索未找到相关结果）\n\n问题: ${content.trim()}`
     } else if (history.length > 0) {
       userPrompt = content.trim()
     } else {
@@ -88,7 +124,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
     const llmResult: any = await withTimeout(
       env.AI.run(modelId as any, {
         messages: llmMessages,
-        max_tokens: 512,
+        max_tokens: isWebSearchResponse ? 1024 : 512,
       }),
       60000, 'AI 生成回答',
     )
@@ -127,9 +163,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
     }
 
     // 9. Fire-and-forget usage log
+    const action = isWebSearchResponse ? 'web_search' : 'ai_chat'
     env.DB.prepare('INSERT INTO usage_logs (user_id, action, model) VALUES (?, ?, ?)')
-      .bind(user.id, 'ai_chat', modelId).run()
-      .catch(e => logSystem(env, 'error', 'ai_chat', 'usage_log 写入失败', { error: String(e) }))
+      .bind(user.id, action, modelId).run()
+      .catch(e => logSystem(env, 'error', action, 'usage_log 写入失败', { error: String(e) }))
 
     // 10. Return both messages
     return ok({
@@ -139,6 +176,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
         sources: assistantMessage.sources ? JSON.parse(assistantMessage.sources) : null,
       },
       title_updated: titleUpdated,
+      ...(isWebSearchResponse ? { is_web_search: true, web_query: webQuery } : {}),
     })
   } catch (e: any) {
     return err('发送消息失败: ' + e.message, 500)

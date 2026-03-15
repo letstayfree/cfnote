@@ -174,6 +174,12 @@ export default function StatsPanel({ token, onClose }: Props) {
                         <td className="text-right">{stats.usage.ai_chat_7d}</td>
                         <td className="text-right font-medium">{stats.usage.ai_chat_total}</td>
                       </tr>
+                      <tr>
+                        <td className="py-1">联网搜索</td>
+                        <td className="text-right">{stats.usage.web_search_today}</td>
+                        <td className="text-right">{stats.usage.web_search_7d}</td>
+                        <td className="text-right font-medium">{stats.usage.web_search_total}</td>
+                      </tr>
                       <tr className="border-t border-gray-200">
                         <td className="py-1">向量化</td>
                         <td className="text-right" colSpan={2} />
