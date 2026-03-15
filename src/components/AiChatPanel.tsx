@@ -23,6 +23,7 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
 
   // Web search save-to-note state
   const [webSearchMsgIds, setWebSearchMsgIds] = useState<Set<number>>(new Set())
+  const [webSourcesMap, setWebSourcesMap] = useState<Map<number, { title: string; url: string }[]>>(new Map())
   const [savingMsgId, setSavingMsgId] = useState<number | null>(null)
   const [savedMsgIds, setSavedMsgIds] = useState<Set<number>>(new Set())
   const [saveNotebooks, setSaveNotebooks] = useState<Notebook[]>([])
@@ -113,7 +114,11 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
       ])
       // Track web search messages
       if (res.data.is_web_search) {
-        setWebSearchMsgIds((prev) => new Set(prev).add(res.data!.assistant_message.id))
+        const msgId = res.data.assistant_message.id
+        setWebSearchMsgIds((prev) => new Set(prev).add(msgId))
+        if (res.data.web_sources?.length) {
+          setWebSourcesMap((prev) => new Map(prev).set(msgId, res.data!.web_sources!))
+        }
       }
       // Update title if changed
       if (res.data.title_updated) {
@@ -178,6 +183,7 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
     setActiveConversation(null)
     setMessages([])
     setWebSearchMsgIds(new Set())
+    setWebSourcesMap(new Map())
     setSavedMsgIds(new Set())
     setSavingMsgId(null)
     loadConversations()
@@ -340,6 +346,27 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
                       >
                         [{i + 1}] {s.article_title}
                       </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Web sources */}
+                {webSourcesMap.has(msg.id) && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {webSourcesMap.get(msg.id)!.map((ws, i) => (
+                      <a
+                        key={`${ws.url}-${i}`}
+                        href={ws.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-md px-2 py-0.5 transition-colors truncate max-w-[200px] inline-flex items-center gap-0.5"
+                        title={ws.url}
+                      >
+                        <svg className="w-3 h-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        [{i + 1}] {ws.title || ws.url}
+                      </a>
                     ))}
                   </div>
                 )}

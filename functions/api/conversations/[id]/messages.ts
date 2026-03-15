@@ -117,6 +117,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
     // 6. Check if LLM wants web search
     let isWebSearchResponse = false
     let webQuery = ''
+    let webSources: { title: string; url: string }[] = []
 
     if (assistantContent.trim().startsWith(WEB_SEARCH_TAG)) {
       webQuery = assistantContent.trim().slice(WEB_SEARCH_TAG.length).trim()
@@ -129,6 +130,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
           )
 
           if (results.length > 0) {
+            webSources = results.map(r => ({ title: r.title, url: r.url }))
             const searchContext = results.map((r, i) =>
               `[${i + 1}] ${r.title}\n来源: ${r.url}\n${r.content}`
             ).join('\n\n')
@@ -201,7 +203,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
         sources: assistantMessage.sources ? JSON.parse(assistantMessage.sources) : null,
       },
       title_updated: titleUpdated,
-      ...(isWebSearchResponse ? { is_web_search: true, web_query: webQuery } : {}),
+      ...(isWebSearchResponse ? { is_web_search: true, web_query: webQuery, web_sources: webSources } : {}),
     })
   } catch (e: any) {
     return err('发送消息失败: ' + e.message, 500)

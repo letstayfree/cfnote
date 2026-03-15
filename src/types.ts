@@ -72,6 +72,7 @@ export interface SendMessageResponse {
   title_updated?: string
   is_web_search?: boolean
   web_query?: string
+  web_sources?: { title: string; url: string }[]
 }
 
 // ---- API Types ----
