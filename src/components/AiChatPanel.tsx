@@ -17,7 +17,9 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [sendingLong, setSendingLong] = useState(false)
   const [loading, setLoading] = useState(false)
+  const sendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -91,6 +93,8 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
     const content = input.trim()
     setInput('')
     setSending(true)
+    setSendingLong(false)
+    sendingTimerRef.current = setTimeout(() => setSendingLong(true), 5000)
 
     // Optimistic user message
     const tempUserMsg: Message = {
@@ -145,6 +149,8 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
     }
 
     setSending(false)
+    setSendingLong(false)
+    if (sendingTimerRef.current) { clearTimeout(sendingTimerRef.current); sendingTimerRef.current = null }
   }
 
   // Save web search result as note
@@ -437,11 +443,21 @@ export default function AiChatPanel({ token, onClose, onOpenArticle }: Props) {
         {sending && (
           <div className="flex justify-start">
             <div className="bg-gray-100 rounded-xl px-4 py-3">
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]" />
-                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]" />
-                <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]" />
-              </div>
+              {sendingLong ? (
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <span className="text-xs text-blue-600">联网搜索中...</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]" />
+                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]" />
+                  <div className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]" />
+                </div>
+              )}
             </div>
           </div>
         )}
