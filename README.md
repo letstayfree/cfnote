@@ -63,34 +63,37 @@
 
 ## 部署
 
-数据库建表由应用内完成（`POST /api/init`，表结构唯一来源是 `worker/routes/system.ts`），升级用量统计也由 Cron 自动归档——部署和维护全程不需要在本地执行数据库命令。三种部署方式任选：
+数据库建表由应用内完成（`POST /api/init`，表结构唯一来源是 `worker/routes/system.ts`），用量统计由 Cron 自动归档，`wrangler.toml` 不含任何账号相关的资源 ID（按名称绑定）——部署和维护全程不需要在本地执行数据库命令，也不需要修改任何文件。三种部署方式任选：
 
-### 方式一：一键部署（推荐）
+### 方式一：一键部署（最快上手）
 
 点击 README 顶部的 **Deploy to Cloudflare** 按钮：
 
-1. Cloudflare 会把仓库克隆到你自己的 GitHub/GitLab 账号，并接好自动构建（以后 push 即部署）
-2. **D1 数据库和 Vectorize 索引会自动创建并绑定**，新资源 ID 自动写入你仓库副本的 `wrangler.toml`——无需修改任何文件
-3. 向导询问 Vectorize 索引参数时，dimensions 填 **`1024`**，metric 选 **`cosine`**（1024 是嵌入模型 `@cf/baai/bge-m3` 的输出维度）。注意这两项创建后不可修改：dimensions 填错向量化会直接报错，metric 选错搜索排序会完全失真，只能删除索引后重建
-4. 部署向导中按提示填写 `JWT_SECRET`（随机字符串即可）
+1. Cloudflare 会把代码克隆成你 GitHub/GitLab 账号下的一个**独立新仓库**，并接好自动构建（以后 push 即部署）
+2. 向导中选择或创建 D1 数据库（`cfnote-db`）和 Vectorize 索引（`cfnote-index`）
+3. 新建 Vectorize 索引时，dimensions 填 **`1024`**，metric 选 **`cosine`**（1024 是嵌入模型 `@cf/baai/bge-m3` 的输出维度）。注意这两项创建后不可修改：dimensions 填错向量化会直接报错，metric 选错搜索排序会完全失真，只能删除索引后重建
+4. 部署向导中按提示填写 `JWT_SECRET`（随机字符串即可）；部署完成后到 Worker 的 **Settings → Variables and Secrets** 确认它以 **Secret** 类型存在，没有就补加一条
 5. 访问站点，按引导完成初始化：建表 → 创建账户 → 进入主界面
 
-### 方式二：仪表盘连接 Git
+> 注意：按钮创建的是独立仓库，与本仓库**没有 fork 关系**，日后无法一键同步上游更新（即使你先 fork 再点按钮，它仍会另建一个新仓库）。想持续跟进更新，请用方式二。
 
-1. Fork 本仓库，在 Cloudflare 仪表盘 Workers 页面选择「连接 Git 仓库」（构建命令 `npm run build`，部署命令 `npx wrangler deploy`）
-2. 仪表盘中创建 D1 数据库 `cfnote-db`，把它的 `database_id` 改到 `wrangler.toml`（唯一需要改动的一行）
-3. 仪表盘中创建 Vectorize 索引 `cfnote-index`（1024 维，cosine）
-4. 在 Worker 设置中添加 Secret `JWT_SECRET`（以及可选的 `CF_API_TOKEN` / `CF_ACCOUNT_ID`）
+### 方式二：Fork + 仪表盘连接 Git（推荐，可持续更新）
+
+1. Fork 本仓库到你的 GitHub 账号
+2. Cloudflare 仪表盘中创建 D1 数据库 `cfnote-db` 和 Vectorize 索引 `cfnote-index`（1024 维，cosine）
+3. Workers 页面选择「连接 Git 仓库」指向你的 fork（构建命令 `npm run build`，部署命令 `npx wrangler deploy`）。`wrangler.toml` 按名称绑定资源，fork 无需修改任何文件；若首次构建报 database_id 相关错误，把仪表盘中 D1 详情页的 ID 填入 `wrangler.toml` 再 push 一次即可
+4. 在 Worker 的 Settings → Variables and Secrets 中添加 Secret `JWT_SECRET`（以及可选的 `CF_API_TOKEN` / `CF_ACCOUNT_ID`）
 5. 访问站点，按引导完成初始化
+6. **后续更新**：本仓库发新版后，在你 fork 的 GitHub 页面点 **Sync fork → Update branch**，push 后自动重新构建部署
 
 ### 方式三：本地 CLI
 
 ```bash
 wrangler login
-wrangler d1 create cfnote-db          # 输出的 database_id 填入 wrangler.toml
+wrangler d1 create cfnote-db
 wrangler vectorize create cfnote-index --dimensions=1024 --metric=cosine
 wrangler secret put JWT_SECRET
-npm install && npm run deploy
+npm install && npm run deploy    # 部署按名称绑定资源,如提示选择数据库,选刚创建的 cfnote-db
 ```
 
 部署成功后输出访问地址（形如 `https://cfnote.<你的子域>.workers.dev`），首次访问按引导初始化即可。
@@ -119,11 +122,11 @@ npm install && npm run deploy
 | `CF_ACCOUNT_ID` | 可选 | Cloudflare 账户 ID（在仪表盘首页 URL 中可找到） |
 | `STATS_TZ_OFFSET` | 可选 | 统计使用的时区偏移（小时），默认 `8`（东八区） |
 
-设置方式：
+设置方式：在 Worker 的 **Settings → Variables and Secrets** 中添加（类型选 Secret），或本地执行：
 
 ```bash
-wrangler pages secret put CF_API_TOKEN
-wrangler pages secret put CF_ACCOUNT_ID
+wrangler secret put CF_API_TOKEN
+wrangler secret put CF_ACCOUNT_ID
 ```
 
 ### 统计接口 `GET /api/stats`
@@ -327,6 +330,11 @@ JWT_SECRET=your-local-dev-secret
 
 - **`Authentication error [code: 10000]`**：wrangler 当前登录的账号与项目缓存的账号不一致（换过 `wrangler login` 账号会出现）。删除 `node_modules/.cache/wrangler` 目录后重试。
 - **`connect ETIMEDOUT`**：Workers AI 绑定启动时需连接 Cloudflare 边缘节点（`*.workers.dev` 域名），国内网络下该域名可能被 DNS 污染。wrangler 不读取系统代理，需在启动前显式设置：`export HTTPS_PROXY=http://127.0.0.1:<代理HTTP端口>` 再 `npm run dev`，或在代理客户端开启 TUN 模式。
+- **`The expression evaluated to a falsy value: (databaseId)`**：`wrangler.toml` 里 D1 的 `database_id` 被写成了空字符串。本项目按名称绑定，正确做法是**整行删掉** `database_id`，不要留空值。
+
+线上部署问题：
+
+- **登录提示 `JWT_SECRET 未配置`**：Worker 运行时读不到该变量。依次检查：① 配置位置必须是 Worker 的 **Settings → Variables and Secrets**（运行时变量），不是构建（Build）设置里的环境变量；② 类型选 **Secret**——仪表盘手工添加的 Text 类型变量在旧版本（未设置 `keep_vars` 时）会被下一次 push 部署清除，Secret 类型永不受影响，当前版本已设置 `keep_vars = true`，两种类型都会保留；③ 如果账号里有多个类似 Worker（反复部署产生），确认改的是当前访问域名对应的那个。添加保存后立即生效，无需重新构建，直接重试登录。
 
 本地开发需要 `wrangler login`（AI 绑定要建立远程连接会话）；线上部署与维护不依赖本地 CLI。
 
