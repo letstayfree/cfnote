@@ -17,7 +17,18 @@
       "Bash(npx tsc:*)",
       "Bash(npx vite:*)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(cd \"D:/Projects/CF/cfnote\" && npm run deploy 2>&1)"
+      "Bash(cd \"D:/Projects/CF/cfnote\" && npm run deploy 2>&1)",
+      "Bash(npm run *)",
+      "Bash(npx wrangler *)",
+      "Bash(curl -s -i -X POST http://localhost:8788/api/init --max-time 30)",
+      "Bash(env)",
+      "Bash(reg query *)",
+      "Bash(npm config *)",
+      "Bash(npm install *)",
+      "Bash(HTTP_PROXY=http://127.0.0.1:10808 HTTPS_PROXY=http://127.0.0.1:10808 NO_PROXY=localhost,127.0.0.1 npx wrangler pages dev dist --port 8789 --compatibility-date=2024-12-01 --persist-to .wrangler/tmp-verify)",
+      "Bash(npm test *)",
+      "Bash(curl -x http://127.0.0.1:10808 -sL \"https://developers.cloudflare.com/workers/wrangler/configuration/\" --max-time 40)",
+      "Bash(git push *)"
     ]
   }
 }

@@ -20,7 +20,7 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "cfnote-db"
-database_id = "3abd7367-e382-41d4-9539-a8db0b368208"
+database_id = ""
 
 [[vectorize]]
 binding = "VECTORIZE"
