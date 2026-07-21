@@ -7,7 +7,9 @@
     "dev": "concurrently -n fe,api -c cyan,green \"vite\" \"wrangler pages dev dist --port 8788 --compatibility-date=2024-12-01\"",
     "build": "tsc && vite build",
     "preview": "wrangler pages dev dist",
-    "deploy": "npm run build && wrangler pages deploy dist"
+    "deploy": "npm run build && wrangler pages deploy dist",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -21,7 +23,7 @@
     "turndown": "^7.2.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260313.1",
+    "@cloudflare/workers-types": "^5.20260721.1",
     "@tailwindcss/vite": "^4.2.1",
     "@types/marked": "^6.0.0",
     "@types/react": "^19.2.14",
@@ -32,6 +34,7 @@
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vite": "^6.4.1",
-    "wrangler": "^4.72.0"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.112.0"
   }
 }
