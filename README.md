@@ -54,9 +54,9 @@
 | 向量存储 | 1,433,600 维 | 5,000,000 维 | 28.7% |
 | 向量查询 | 3,072,000 维/月 | 30,000,000 维/月 | 10.2% |
 | Workers AI | ~215 neurons/天 | 10,000 neurons/天 | 2.15% |
+| D1 读写 | <5,000 行/天 | 5,000,000 读 + 100,000 写/天 | <0.1% |
 
 > 实际 neurons 消耗取决于所选模型：Llama 3.1 8B (~15/次) 最节省，DeepSeek R1 32B (~178/次) 最高。
-| D1 读写 | <5,000 行/天 | 5,000,000 读 + 100,000 写/天 | <0.1% |
 
 ## 部署
 
@@ -119,24 +119,39 @@ npm run deploy
 2. 填写用户名和密码 —— 创建管理员账户
 3. 自动登录进入主界面
 
+### 网页端部署（无需本地 CLI）
+
+数据库建表由应用内完成（`/api/init`，表结构唯一来源是 `functions/api/init.ts`），因此也可以完全通过 Cloudflare 仪表盘部署：
+
+1. Fork 本仓库，在 Pages 中选择「连接到 Git」创建项目（构建命令 `npm run build`，输出目录 `dist`）
+2. 仪表盘中创建 D1 数据库 `cfnote-db`，把它的 `database_id` 改到 `wrangler.toml`（一行改动，随仓库提交）
+3. 仪表盘中创建 Vectorize 索引 `cfnote-index`（1024 维，cosine）
+4. 在 Pages 项目设置中添加 Secret `JWT_SECRET`（以及可选的 `CF_API_TOKEN` / `CF_ACCOUNT_ID`）
+5. 访问站点，按引导完成初始化——建表自动执行
+
 ## 统计仪表盘
 
 点击顶栏右侧的柱状图图标打开统计面板，可查看：
 
 - **概览卡片**：笔记本数、文章数、已索引文章数、向量存储使用率
 - **Workers AI 额度**：今日 neurons 消耗进度条、按模型细分、近7天趋势图
-- **使用量统计**：搜索/AI问答/AI对话 的今日/7天/累计调用次数，以及向量化、导入次数
-- **模型调用统计**：按模型分组的今日/7天调用次数（来自本地日志，无需 CF API Token）
-- **7天趋势**：纯 CSS 柱状图，展示近7天搜索、AI问答和AI对话的调用走势
+- **使用量统计**：搜索/AI问答/AI对话/联网搜索 的今日/7天/累计调用次数
+- **模型调用统计**：按模型分组的今日/7天调用次数
+- **7天趋势**：纯 CSS 柱状图，展示近7天各功能的调用走势
 
-### 环境变量（可选）
+### 统计数据来源
 
-统计面板中的 Workers AI 额度数据来自 Cloudflare GraphQL Analytics API，需配置以下环境变量才能显示，未配置时面板其余部分仍可正常工作：
+使用量数据通过 **Cloudflare Analytics Engine (AE)** 采集，不消耗 D1 写入配额。AE 数据保留 90 天，通过 `POST /api/stats/archive` 归档到 D1 `usage_archive` 表实现长期保存（见下文「数据归档」）。
+
+「今日/近7天」按本地自然日统计，时区由 `STATS_TZ_OFFSET` 控制；Workers AI neurons 额度按 Cloudflare 官方口径以 UTC 日重置。
+
+统计面板需要配置以下环境变量才能显示完整数据：
 
 | 变量 | 必需 | 说明 |
 |------|------|------|
 | `CF_API_TOKEN` | 可选 | Cloudflare API Token，需包含 `Account Analytics: Read` 权限 |
 | `CF_ACCOUNT_ID` | 可选 | Cloudflare 账户 ID（在仪表盘首页 URL 中可找到） |
+| `STATS_TZ_OFFSET` | 可选 | 统计使用的时区偏移（小时），默认 `8`（东八区） |
 
 设置方式：
 
@@ -179,7 +194,7 @@ wrangler pages secret put CF_ACCOUNT_ID
     ]
   },
 
-  // ---- 调用次数统计（D1 usage_logs 自行追踪）----
+  // ---- 调用次数统计（Analytics Engine + D1 归档）----
   "usage": {
     "search_today": 8,          // 语义搜索 — 今日
     "search_7d": 45,            // 语义搜索 — 近7天
@@ -190,6 +205,9 @@ wrangler pages secret put CF_ACCOUNT_ID
     "ai_chat_today": 5,         // AI对话 — 今日
     "ai_chat_7d": 22,           // AI对话 — 近7天
     "ai_chat_total": 110,       // AI对话 — 累计
+    "web_search_today": 1,      // 联网搜索 — 今日
+    "web_search_7d": 4,         // 联网搜索 — 近7天
+    "web_search_total": 15,     // 联网搜索 — 累计
     "vectorize_total": 42,      // 向量化 — 累计
     "import_total": 6,          // URL导入 — 累计
     "model_usage": [            // 按模型分组的调用统计
@@ -200,8 +218,8 @@ wrangler pages secret put CF_ACCOUNT_ID
 
   // ---- 7天趋势 ----
   "daily_trend": [
-    { "date": "2026-03-08", "search": 5, "ai_qa": 2, "ai_chat": 3 },
-    { "date": "2026-03-09", "search": 8, "ai_qa": 1, "ai_chat": 4 }
+    { "date": "2026-03-08", "search": 5, "ai_qa": 2, "ai_chat": 3, "web_search": 0 },
+    { "date": "2026-03-09", "search": 8, "ai_qa": 1, "ai_chat": 4, "web_search": 1 }
     // ...共7天
   ]
 }
@@ -219,7 +237,7 @@ interface Stats {
   vector_usage_percent: number
   ai_usage: StatsAiUsage | null
   usage: StatsUsage
-  daily_trend: { date: string; search: number; ai_qa: number; ai_chat: number }[]
+  daily_trend: { date: string; search: number; ai_qa: number; ai_chat: number; web_search: number }[]
 }
 
 interface StatsAiUsage {
@@ -247,36 +265,40 @@ interface StatsUsage {
   ai_chat_today: number
   ai_chat_7d: number
   ai_chat_total: number
+  web_search_today: number
+  web_search_7d: number
+  web_search_total: number
   vectorize_total: number
   import_total: number
   model_usage: { model: string; today: number; week: number }[]
 }
 ```
 
-### 数据库表 `usage_logs`
+### 使用量追踪（Analytics Engine）
 
-统计面板中的调用次数数据来自 `usage_logs` 表，各接口在成功执行后自动写入日志（fire-and-forget，不影响主请求性能）：
+使用量数据通过 Cloudflare Analytics Engine 采集（`env.ANALYTICS.writeDataPoint()`），不消耗 D1 写入配额：
 
 | 接口 | action 值 | 触发时机 |
 |------|----------|---------|
 | `POST /api/search` | `search` | 语义搜索成功返回结果后 |
-| `POST /api/search/ai` | `ai_qa` | AI问答成功生成回答后（记录模型） |
-| `POST /api/conversations/:id/messages` | `ai_chat` | AI多轮对话生成回答后（记录模型） |
-| `POST /api/articles` 向量化 | `vectorize` | 文章向量化成功写入 Vectorize 后 |
+| `POST /api/search/ai` | `ai_qa` | AI问答成功生成回答后 |
+| `POST /api/conversations/:id/messages` | `ai_chat` / `web_search` | AI对话/联网搜索后 |
+| `POST /api/articles` 向量化 | `vectorize` | 文章向量化成功后 |
 | `POST /api/articles/import` | `import` | URL导入文章成功后 |
 
-建表语句（已包含在 `POST /api/init` 初始化流程中）：
+AE 数据点结构：`blobs = [action, model, userId]`，`doubles = [1]`，`indexes = [action]`
 
-```sql
-CREATE TABLE IF NOT EXISTS usage_logs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  action TEXT NOT NULL,       -- 'search' | 'ai_qa' | 'ai_chat' | 'vectorize' | 'import'
-  model TEXT,                 -- AI 请求使用的模型 ID（仅 ai_qa/ai_chat 有值）
-  created_at TEXT DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_usage_logs_user_action ON usage_logs(user_id, action, created_at);
+### 数据归档
+
+AE 数据只保留 90 天。`POST /api/stats/archive` 会把归档边界之后所有**已完成的月份**（截至上个月）逐月汇总写入 D1 `usage_archive` 表，并推进边界：
+
+```bash
+curl -X POST https://your-site/api/stats/archive -H "Authorization: Bearer <token>"
 ```
+
+- 归档按月顺序推进，每个月的数据行与边界更新在同一个 D1 事务中原子提交，中途失败后重跑不会重复计数
+- `/api/stats` 的累计值 = AE 边界之后的数据 + `usage_archive` 归档值，因此归档前后累计数保持一致，不会双重计算
+- 建议每月初调用一次（Pages 无定时触发器，可用外部 cron 或手动触发）；只要归档间隔不超过 90 天就不会丢数据
 
 ## 设置
 
@@ -333,6 +355,15 @@ JWT_SECRET=your-local-dev-secret
 
 > 注意：本地 D1 使用 `.wrangler/` 目录下的 SQLite 文件，与线上数据库独立。本地环境下 Vectorize 和 Workers AI 需要联网访问 Cloudflare 服务，不可用时相关功能会静默跳过。
 
+### 常见问题排查
+
+页面报 `Unexpected end of JSON input` 或所有 API 请求失败，说明 8788 端口的后端没起来，查看 `npm run dev` 输出中绿色 `api` 部分的报错：
+
+- **`Authentication error [code: 10000]`**：wrangler 当前登录的账号与项目缓存的账号不一致（换过 `wrangler login` 账号会出现）。删除 `node_modules/.cache/wrangler` 目录后重试。
+- **`connect ETIMEDOUT`**：Workers AI 绑定启动时需连接 Cloudflare 边缘节点（`*.workers.dev` 域名），国内网络下该域名可能被 DNS 污染。wrangler 不读取系统代理，需在启动前显式设置：`export HTTPS_PROXY=http://127.0.0.1:<代理HTTP端口>` 再 `npm run dev`，或在代理客户端开启 TUN 模式。
+
+本地开发需要 `wrangler login`（AI 绑定要建立远程连接会话）；线上部署与维护不依赖本地 CLI。
+
 ### 全栈预览
 
 ```bash
@@ -347,6 +378,15 @@ npm run preview
 ```bash
 npx tsc --noEmit
 ```
+
+### 单元测试
+
+```bash
+npm test          # 单次运行
+npm run test:watch  # 监听模式
+```
+
+用 Vitest 覆盖 `functions/api/_utils.ts` 中的纯函数（分块、JWT、密码哈希、内容哈希、think 标签清理、模型白名单、超时保护、AE 埋点结构），用例在 `tests/utils.test.ts`，无需任何 Cloudflare 环境即可运行。
 
 ### 构建
 
@@ -365,7 +405,7 @@ cfnote/
 │   │   ├── _middleware.ts      # JWT 认证中间件
 │   │   ├── _utils.ts          # 工具函数（JWT/哈希/分块/模型管理）
 │   │   ├── status.ts          # GET  /api/status
-│   │   ├── init.ts            # POST /api/init（建表，含 usage_logs）
+│   │   ├── init.ts            # POST /api/init（建表，表结构唯一来源）
 │   │   ├── settings.ts        # GET/PUT /api/settings（模型设置）
 │   │   ├── auth/
 │   │   │   ├── register.ts    # POST /api/auth/register
@@ -375,7 +415,9 @@ cfnote/
 │   │   │   ├── [id].ts        # PUT/DELETE /api/notebooks/:id
 │   │   │   └── [id]/
 │   │   │       └── articles.ts # GET /api/notebooks/:id/articles
-│   │   ├── stats.ts           # GET  /api/stats（统计仪表盘）
+│   │   ├── stats.ts           # GET  /api/stats（统计仪表盘，数据来自 AE + 归档）
+│   │   ├── stats/
+│   │   │   └── archive.ts     # POST /api/stats/archive（AE 数据归档到 D1）
 │   │   ├── articles/
 │   │   │   ├── index.ts       # POST /api/articles（含向量化）
 │   │   │   ├── import.ts      # POST /api/articles/import（URL导入）
@@ -408,7 +450,6 @@ cfnote/
 │   ├── App.tsx                # 应用入口 + 路由
 │   ├── main.tsx               # React 挂载
 │   └── index.css              # Tailwind 入口
-├── schema.sql                  # D1 建表脚本（参考）
 ├── wrangler.toml               # Cloudflare 绑定配置
 ├── vite.config.ts
 ├── tsconfig.json

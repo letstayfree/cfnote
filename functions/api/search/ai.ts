@@ -1,4 +1,4 @@
-import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags, logSystem } from '../_utils'
+import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags, trackEvent } from '../_utils'
 import type { Env } from '../../../src/types'
 
 // POST /api/search/ai - AI-powered Q&A search (vector search + LLM)
@@ -36,9 +36,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, data }) 
       answer = stripThinkTags(answer)
     }
 
-    // Fire-and-forget usage log
-    env.DB.prepare('INSERT INTO usage_logs (user_id, action, model) VALUES (?, ?, ?)').bind(user.id, 'ai_qa', modelId).run()
-      .catch(e => logSystem(env, 'error', 'ai_qa', 'usage_log 写入失败', { error: String(e) }))
+    // Fire-and-forget usage tracking
+    trackEvent(env, 'ai_qa', user.id, modelId)
 
     return ok({
       answer,

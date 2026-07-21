@@ -1,4 +1,4 @@
-import { ok, err, chunkText, contentHash, logSystem } from '../_utils'
+import { ok, err, chunkText, contentHash, trackEvent } from '../_utils'
 import type { Env } from '../../../src/types'
 
 // POST /api/articles - Create article
@@ -92,9 +92,8 @@ async function vectorizeArticle(
       env.DB.prepare('UPDATE articles SET is_vectorized = 1 WHERE id = ?').bind(articleId),
     ])
 
-    // Fire-and-forget usage log
-    env.DB.prepare('INSERT INTO usage_logs (user_id, action) VALUES (?, ?)').bind(userId, 'vectorize').run()
-      .catch(e => logSystem(env, 'error', 'vectorize', 'usage_log 写入失败', { error: String(e) }))
+    // Fire-and-forget usage tracking
+    trackEvent(env, 'vectorize', userId)
 
     return null
   } catch (e: any) {

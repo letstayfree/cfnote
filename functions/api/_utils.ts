@@ -46,6 +46,33 @@ export function isReasoningModel(modelId: string): boolean {
 
 // ---- System Logging ----
 
+// ---- Analytics Engine ----
+
+export const AE_DATASET = 'cfnote_usage'
+
+export function trackEvent(env: Env, action: string, userId: number, model?: string) {
+  try {
+    if (env.ANALYTICS) {
+      env.ANALYTICS.writeDataPoint({
+        blobs: [action, model ?? '', userId.toString()],
+        doubles: [1],
+        indexes: [action],
+      })
+    }
+  } catch { /* AE not available locally */ }
+}
+
+/** Query the AE SQL API. Throws on HTTP error so callers can distinguish failure from empty. */
+export async function queryAeSql<T>(token: string, accountId: string, sql: string): Promise<T[]> {
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/analytics_engine/sql`,
+    { method: 'POST', headers: { 'Authorization': `Bearer ${token}` }, body: sql },
+  )
+  if (!res.ok) throw new Error(`AE SQL 查询失败: ${res.status} ${await res.text()}`)
+  const json = await res.json() as any
+  return (json.data ?? []) as T[]
+}
+
 export function logSystem(
   env: Env, level: 'error' | 'warn' | 'info',
   source: string, message: string, detail?: unknown,

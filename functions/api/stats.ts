@@ -1,5 +1,10 @@
-import { ok, err } from './_utils'
+import { ok, err, getSettingValue, queryAeSql, AE_DATASET } from './_utils'
 import type { Env } from '../../src/types'
+
+// 统计口径:
+// - "今日/7天/趋势" 按本地自然日统计,时区由 STATS_TZ_OFFSET 指定(小时,默认 +8)
+// - 累计 = AE(仅归档边界之后)+ usage_archive 归档值,边界由 /api/stats/archive 推进
+// - Workers AI neurons 沿用 UTC 自然日,与 Cloudflare 官方额度重置时间一致
 
 // GET /api/stats - Aggregated usage statistics
 export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
@@ -23,94 +28,117 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
       vectors_count = d.vectorsCount ?? d.vectorCount ?? 0
     } catch { /* vectorize may not be available locally */ }
 
-    const vectors_limit = 4882 // 5M dims / 1024 dims per vector
+    const vectors_limit = 4882
     const vector_usage_percent = vectors_limit > 0 ? Math.round((vectors_count / vectors_limit) * 10000) / 100 : 0
 
-    // 3. Usage logs from D1
-    const now = new Date()
-    const todayStart = now.toISOString().slice(0, 10) + ' 00:00:00'
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10) + ' 00:00:00'
+    // 3. Usage data from Analytics Engine + D1 archive
+    const cfToken = env.CF_API_TOKEN
+    const cfAccount = env.CF_ACCOUNT_ID
 
-    const usageRows = await env.DB.prepare(`
-      SELECT action,
-        SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as today,
-        SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as week,
-        COUNT(*) as total
-      FROM usage_logs
-      GROUP BY action
-    `).bind(todayStart, sevenDaysAgo).all<{ action: string; today: number; week: number; total: number }>()
-
-    const usageMap: Record<string, { today: number; week: number; total: number }> = {}
-    for (const r of usageRows.results ?? []) {
-      usageMap[r.action] = { today: r.today, week: r.week, total: r.total }
-    }
+    const tzOffsetMs = (Number(env.STATS_TZ_OFFSET ?? '8') || 0) * 3600_000
+    const localDate = (utcMs: number) => new Date(utcMs + tzOffsetMs).toISOString().slice(0, 10)
+    const today = localDate(Date.now())
 
     const usage = {
-      search_today: usageMap.search?.today ?? 0,
-      search_7d: usageMap.search?.week ?? 0,
-      search_total: usageMap.search?.total ?? 0,
-      ai_qa_today: usageMap.ai_qa?.today ?? 0,
-      ai_qa_7d: usageMap.ai_qa?.week ?? 0,
-      ai_qa_total: usageMap.ai_qa?.total ?? 0,
-      ai_chat_today: usageMap.ai_chat?.today ?? 0,
-      ai_chat_7d: usageMap.ai_chat?.week ?? 0,
-      ai_chat_total: usageMap.ai_chat?.total ?? 0,
-      web_search_today: usageMap.web_search?.today ?? 0,
-      web_search_7d: usageMap.web_search?.week ?? 0,
-      web_search_total: usageMap.web_search?.total ?? 0,
-      vectorize_total: usageMap.vectorize?.total ?? 0,
-      import_total: usageMap.import?.total ?? 0,
+      search_today: 0, search_7d: 0, search_total: 0,
+      ai_qa_today: 0, ai_qa_7d: 0, ai_qa_total: 0,
+      ai_chat_today: 0, ai_chat_7d: 0, ai_chat_total: 0,
+      web_search_today: 0, web_search_7d: 0, web_search_total: 0,
+      vectorize_total: 0, import_total: 0,
       model_usage: [] as { model: string; today: number; week: number }[],
     }
 
-    // Per-model usage breakdown from local logs
-    try {
-      const modelRows = await env.DB.prepare(`
-        SELECT model,
-          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as today,
-          SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) as week
-        FROM usage_logs
-        WHERE model IS NOT NULL AND action IN ('ai_chat', 'ai_qa')
-        GROUP BY model
-        ORDER BY week DESC
-      `).bind(todayStart, sevenDaysAgo).all<{ model: string; today: number; week: number }>()
-
-      usage.model_usage = (modelRows.results ?? []).map(r => ({
-        model: r.model,
-        today: r.today,
-        week: r.week,
-      }))
-    } catch { /* model column may not exist yet */ }
-
-    // 4. Daily trend (last 7 days)
-    const trendRows = await env.DB.prepare(`
-      SELECT date(created_at) as date, action, COUNT(*) as c
-      FROM usage_logs
-      WHERE created_at >= ?
-      GROUP BY date(created_at), action
-      ORDER BY date(created_at)
-    `).bind(sevenDaysAgo).all<{ date: string; action: string; c: number }>()
-
+    // Initialize 7-day trend (local calendar days, oldest first)
     const trendMap: Record<string, { search: number; ai_qa: number; ai_chat: number; web_search: number }> = {}
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 86400000).toISOString().slice(0, 10)
-      trendMap[d] = { search: 0, ai_qa: 0, ai_chat: 0, web_search: 0 }
+      trendMap[localDate(Date.now() - i * 86400000)] = { search: 0, ai_qa: 0, ai_chat: 0, web_search: 0 }
     }
-    for (const r of trendRows.results ?? []) {
-      if (trendMap[r.date]) {
-        if (r.action === 'search') trendMap[r.date].search = r.c
-        if (r.action === 'ai_qa') trendMap[r.date].ai_qa = r.c
-        if (r.action === 'ai_chat') trendMap[r.date].ai_chat = r.c
-        if (r.action === 'web_search') trendMap[r.date].web_search = r.c
+
+    if (cfToken && cfAccount) {
+      try {
+        const boundary = await getSettingValue(env, 'usage_archive_boundary', '')
+        const totalsWhere = /^\d{4}-\d{2}-\d{2}$/.test(boundary)
+          ? `WHERE timestamp >= toDateTime('${boundary} 00:00:00')`
+          : ''
+
+        const [totalRows, hourRows] = await Promise.all([
+          // 累计:只统计归档边界之后,避免与 usage_archive 重复计算
+          queryAeSql<{ action: string; total: number }>(cfToken, cfAccount, `
+            SELECT blob1 AS action, SUM(double1 * _sample_interval) AS total
+            FROM ${AE_DATASET} ${totalsWhere}
+            GROUP BY blob1
+          `),
+          // 近8天按小时分桶,在 JS 里按本地时区聚合成自然日
+          queryAeSql<{ hour: string; action: string; model: string; c: number }>(cfToken, cfAccount, `
+            SELECT toStartOfInterval(timestamp, INTERVAL '1' HOUR) AS hour,
+              blob1 AS action, blob2 AS model, SUM(double1 * _sample_interval) AS c
+            FROM ${AE_DATASET}
+            WHERE timestamp > NOW() - INTERVAL '8' DAY
+            GROUP BY hour, blob1, blob2
+          `),
+        ])
+
+        for (const r of totalRows) {
+          const total = Number(r.total) || 0
+          if (r.action === 'search') usage.search_total = total
+          if (r.action === 'ai_qa') usage.ai_qa_total = total
+          if (r.action === 'ai_chat') usage.ai_chat_total = total
+          if (r.action === 'web_search') usage.web_search_total = total
+          if (r.action === 'vectorize') usage.vectorize_total = total
+          if (r.action === 'import') usage.import_total = total
+        }
+
+        const modelStats: Record<string, { today: number; week: number }> = {}
+        for (const r of hourRows) {
+          const iso = r.hour.includes('T') ? r.hour : r.hour.replace(' ', 'T') + 'Z'
+          const utcMs = Date.parse(iso)
+          if (Number.isNaN(utcMs)) continue
+          const d = localDate(utcMs)
+          const trend = trendMap[d]
+          if (!trend) continue // 第8天的残留小时,不在7天窗口内
+          const n = Number(r.c) || 0
+          const isToday = d === today
+
+          if (r.action === 'search') { usage.search_7d += n; if (isToday) usage.search_today += n }
+          if (r.action === 'ai_qa') { usage.ai_qa_7d += n; if (isToday) usage.ai_qa_today += n }
+          if (r.action === 'ai_chat') { usage.ai_chat_7d += n; if (isToday) usage.ai_chat_today += n }
+          if (r.action === 'web_search') { usage.web_search_7d += n; if (isToday) usage.web_search_today += n }
+          if (r.action in trend) trend[r.action as keyof typeof trend] += n
+
+          if (r.model) {
+            const m = modelStats[r.model] ?? (modelStats[r.model] = { today: 0, week: 0 })
+            m.week += n
+            if (isToday) m.today += n
+          }
+        }
+
+        usage.model_usage = Object.entries(modelStats)
+          .map(([model, v]) => ({ model, ...v }))
+          .sort((a, b) => b.week - a.week)
+      } catch (e) {
+        console.error('Failed to fetch AE usage:', e)
       }
     }
+
+    // Add archived totals from D1 (data beyond the AE boundary)
+    try {
+      const archiveRows = await env.DB.prepare(
+        'SELECT action, SUM(count) as total FROM usage_archive GROUP BY action'
+      ).all<{ action: string; total: number }>()
+      for (const r of archiveRows.results ?? []) {
+        if (r.action === 'search') usage.search_total += r.total
+        if (r.action === 'ai_qa') usage.ai_qa_total += r.total
+        if (r.action === 'ai_chat') usage.ai_chat_total += r.total
+        if (r.action === 'web_search') usage.web_search_total += r.total
+        if (r.action === 'vectorize') usage.vectorize_total += r.total
+        if (r.action === 'import') usage.import_total += r.total
+      }
+    } catch { /* archive table may not exist yet */ }
+
     const daily_trend = Object.entries(trendMap).map(([date, v]) => ({ date, ...v }))
 
-    // 5. CF GraphQL API for Workers AI usage (optional)
+    // 4. CF GraphQL API for Workers AI usage (optional)
     let ai_usage = null
-    const cfToken = (env as any).CF_API_TOKEN as string | undefined
-    const cfAccount = (env as any).CF_ACCOUNT_ID as string | undefined
-
     if (cfToken && cfAccount) {
       try {
         ai_usage = await fetchAiUsage(cfToken, cfAccount)
@@ -120,20 +148,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
     }
 
     return ok({
-      notebooks,
-      articles,
-      articles_vectorized,
-      vectors_count,
-      vectors_limit,
-      vector_usage_percent,
-      ai_usage,
-      usage,
-      daily_trend,
+      notebooks, articles, articles_vectorized,
+      vectors_count, vectors_limit, vector_usage_percent,
+      ai_usage, usage, daily_trend,
     })
   } catch (e: any) {
     return err('获取统计失败: ' + e.message, 500)
   }
 }
+
+// ---- CF GraphQL API for Workers AI neuron usage ----
 
 async function fetchAiUsage(token: string, accountId: string) {
   const now = new Date()
@@ -167,10 +191,7 @@ async function fetchAiUsage(token: string, accountId: string) {
 
   const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
   })
 
@@ -179,10 +200,8 @@ async function fetchAiUsage(token: string, accountId: string) {
   const json = await res.json() as any
   const accounts = json?.data?.viewer?.accounts
   if (!accounts || accounts.length === 0) return null
-
   const account = accounts[0]
 
-  // Today's data — aggregate by model
   const todayGroups = account.today ?? []
   let neurons_today = 0
   const modelMap: Record<string, { count: number; neurons: number; inputTokens: number; outputTokens: number }> = {}
@@ -200,7 +219,6 @@ async function fetchAiUsage(token: string, accountId: string) {
 
   const models = Object.entries(modelMap).map(([modelId, v]) => ({ modelId, ...v }))
 
-  // Daily trend
   const dailyGroups = account.daily ?? []
   const dailyMap: Record<string, { neurons: number; count: number }> = {}
   for (const g of dailyGroups) {
@@ -215,10 +233,5 @@ async function fetchAiUsage(token: string, accountId: string) {
     .map(([date, v]) => ({ date, ...v }))
     .sort((a, b) => a.date.localeCompare(b.date))
 
-  return {
-    neurons_today,
-    neurons_limit: 10000,
-    models,
-    daily,
-  }
+  return { neurons_today, neurons_limit: 10000, models, daily }
 }

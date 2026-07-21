@@ -1,4 +1,4 @@
-import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags, logSystem, jinaSearch } from '../../_utils'
+import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags, logSystem, jinaSearch, trackEvent } from '../../_utils'
 import type { Env } from '../../../../src/types'
 
 const WEB_SEARCH_TAG = '[WEB_SEARCH]'
@@ -190,11 +190,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
       titleUpdated = newTitle
     }
 
-    // 9. Fire-and-forget usage log
+    // 9. Fire-and-forget usage tracking
     const action = isWebSearchResponse ? 'web_search' : 'ai_chat'
-    env.DB.prepare('INSERT INTO usage_logs (user_id, action, model) VALUES (?, ?, ?)')
-      .bind(user.id, action, modelId).run()
-      .catch(e => logSystem(env, 'error', action, 'usage_log 写入失败', { error: String(e) }))
+    trackEvent(env, action, user.id, modelId)
 
     // 10. Return both messages
     return ok({

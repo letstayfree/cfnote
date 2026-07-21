@@ -3,9 +3,11 @@ export interface Env {
   DB: D1Database
   VECTORIZE: VectorizeIndex
   AI: Ai
+  ANALYTICS?: AnalyticsEngineDataset
   JWT_SECRET: string
   CF_API_TOKEN?: string
   CF_ACCOUNT_ID?: string
+  STATS_TZ_OFFSET?: string
 }
 
 // ---- Database Models ----

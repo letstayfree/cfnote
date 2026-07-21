@@ -13,3 +13,7 @@ index_name = "cfnote-index"
 
 [ai]
 binding = "AI"
+
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "cfnote_usage"

@@ -1,5 +1,7 @@
 import { ok, err } from './_utils'
+import type { Env } from '../../src/types'
 
+// 数据库表结构的唯一来源:修改表结构直接改这里,通过 POST /api/init 应用(全部 IF NOT EXISTS,可重复执行)
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,15 +52,6 @@ CREATE INDEX IF NOT EXISTS idx_articles_user ON articles(user_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_article ON chunks(article_id);
 CREATE INDEX IF NOT EXISTS idx_notebooks_user ON notebooks(user_id);
 
-CREATE TABLE IF NOT EXISTS usage_logs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  action TEXT NOT NULL,
-  model TEXT,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_usage_logs_user_action ON usage_logs(user_id, action, created_at);
-
 CREATE TABLE IF NOT EXISTS conversations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
@@ -94,10 +87,19 @@ CREATE TABLE IF NOT EXISTS system_logs (
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_system_logs_level_time ON system_logs(level, created_at);
+
+CREATE TABLE IF NOT EXISTS usage_archive (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  period TEXT NOT NULL,
+  action TEXT NOT NULL,
+  model TEXT DEFAULT '',
+  count INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(period, action, model)
+);
 `
 
 // POST /api/init - Initialize database tables
-export const onRequestPost: PagesFunction<{ DB: D1Database }> = async ({ env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ env }) => {
   try {
     const statements = SCHEMA.split(';')
       .map((s) => s.trim())
@@ -106,11 +108,6 @@ export const onRequestPost: PagesFunction<{ DB: D1Database }> = async ({ env }) 
     for (const sql of statements) {
       await env.DB.prepare(sql).run()
     }
-
-    // Migration: add model column to usage_logs (safe — ignore if exists)
-    try {
-      await env.DB.prepare('ALTER TABLE usage_logs ADD COLUMN model TEXT').run()
-    } catch { /* column already exists */ }
 
     return ok({ message: '数据库初始化成功' })
   } catch (e: any) {
