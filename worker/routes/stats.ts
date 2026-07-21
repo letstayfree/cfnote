@@ -1,5 +1,9 @@
-import { ok, err, getSettingValue, queryAeSql, AE_DATASET } from './_utils'
-import type { Env } from '../../src/types'
+import { Hono } from 'hono'
+import { ok, err, getSettingValue, queryAeSql, AE_DATASET } from '../utils'
+import { archiveCompletedMonths } from '../archive'
+import type { AppEnv } from '../types'
+
+export const stats = new Hono<AppEnv>()
 
 // 统计口径:
 // - "今日/7天/趋势" 按本地自然日统计,时区由 STATS_TZ_OFFSET 指定(小时,默认 +8)
@@ -7,7 +11,8 @@ import type { Env } from '../../src/types'
 // - Workers AI neurons 沿用 UTC 自然日,与 Cloudflare 官方额度重置时间一致
 
 // GET /api/stats - Aggregated usage statistics
-export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
+stats.get('/', async (c) => {
+  const env = c.env
   try {
     // 1. D1 counts
     const [notebookRow, articleRow, vectorizedRow] = await Promise.all([
@@ -155,7 +160,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ env }) => {
   } catch (e: any) {
     return err('获取统计失败: ' + e.message, 500)
   }
-}
+})
+
+// POST /api/stats/archive - 手动触发归档(逻辑与月度 cron 共用,见 worker/archive.ts)
+stats.post('/archive', async (c) => {
+  const cfToken = c.env.CF_API_TOKEN
+  const cfAccount = c.env.CF_ACCOUNT_ID
+  if (!cfToken || !cfAccount) {
+    return err('需要配置 CF_API_TOKEN 和 CF_ACCOUNT_ID', 400)
+  }
+
+  try {
+    const result = await archiveCompletedMonths(c.env, cfToken, cfAccount)
+    return ok(result)
+  } catch (e: any) {
+    return err('归档失败: ' + e.message, 500)
+  }
+})
 
 // ---- CF GraphQL API for Workers AI neuron usage ----
 

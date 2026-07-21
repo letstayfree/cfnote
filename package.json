@@ -4,18 +4,32 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n fe,api -c cyan,green \"vite\" \"wrangler pages dev dist --port 8788 --compatibility-date=2024-12-01\"",
+    "dev": "concurrently -n fe,api -c cyan,green \"vite\" \"wrangler dev --port 8788\"",
     "build": "tsc && vite build",
-    "preview": "wrangler pages dev dist",
-    "deploy": "npm run build && wrangler pages deploy dist",
+    "preview": "wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "cloudflare": {
+    "bindings": {
+      "JWT_SECRET": {
+        "description": "登录令牌签名密钥，填一串随机字符串即可（例如 openssl rand -hex 32 的输出）。"
+      },
+      "CF_API_TOKEN": {
+        "description": "可选：统计面板用的 Cloudflare API Token，需要 Account Analytics:Read 权限，不填则统计面板不显示用量数据。"
+      },
+      "CF_ACCOUNT_ID": {
+        "description": "可选：Cloudflare 账户 ID（仪表盘首页 URL 中可找到），配合 CF_API_TOKEN 使用。"
+      }
+    }
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "hono": "^4.12.31",
     "marked": "^17.0.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

@@ -12,7 +12,7 @@ import {
   DEFAULT_MODEL,
   withTimeout,
   trackEvent,
-} from '../functions/api/_utils'
+} from '../worker/utils'
 
 afterEach(() => {
   vi.useRealTimers()

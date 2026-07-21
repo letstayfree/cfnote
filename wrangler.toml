@@ -1,6 +1,19 @@
 name = "cfnote"
-compatibility_date = "2024-09-23"
-pages_build_output_dir = "dist"
+main = "worker/index.ts"
+compatibility_date = "2024-12-01"
+
+# 静态资源:非 /api 请求直接由平台服务(免费不限量),未命中路径回退到 SPA 入口
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+# 每月 2 日 02:47 UTC 自动归档上月用量(见 worker/archive.ts,未配置统计凭据时自动跳过)
+[triggers]
+crons = ["47 2 2 * *"]
+
+[observability]
+enabled = true
 
 [[d1_databases]]
 binding = "DB"

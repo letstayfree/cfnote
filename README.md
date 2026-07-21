@@ -1,20 +1,22 @@
 # CFNote - 私人知识库系统
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/meicuode/cfnote)
+
 基于 Cloudflare 全栈基础设施构建的私人知识库，支持笔记本管理、Markdown 文章编辑、自动向量化和自然语言语义搜索。全程不依赖第三方 LLM API，所有 AI 能力由 Cloudflare Workers AI 提供，设计在免费额度内运行。
 
 ## 技术架构
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│              Cloudflare Pages                              │
+│         Cloudflare Workers + Static Assets                 │
 │                                                            │
-│   React + Tailwind CSS (SPA)                               │
+│   React + Tailwind CSS (SPA, 静态资源直出)                  │
 │   ┌────────┐ ┌──────────┐ ┌──────────────┐ ┌───────────┐  │
 │   │ 笔记本  │ │ 文章列表  │ │ Markdown编辑 │ │ AI 多轮   │  │
 │   │ 侧边栏  │ │          │ │ / 预览       │ │ 对话面板  │  │
 │   └────────┘ └──────────┘ └──────────────┘ └───────────┘  │
-│                    │                                       │
-│         Pages Functions (API)                              │
+│                    │ /api/*                                │
+│         Worker (Hono 路由 + 月度归档 Cron)                  │
 │                    │                                       │
 │      ┌─────────┬───┴────┬────────────┐                     │
 │      │   D1    │Vectorize│ Workers AI │                     │
@@ -25,12 +27,13 @@
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | React 18 + TypeScript + Tailwind CSS 4 + Vite 6 |
-| 后端 | Cloudflare Pages Functions |
+| 前端 | React 19 + TypeScript + Tailwind CSS 4 + Vite 6（Workers Static Assets 直出，请求免费不限量） |
+| 后端 | Cloudflare Worker + Hono 路由，`/api/*` 走 Worker，其余走静态资源 |
 | 数据库 | Cloudflare D1 (边缘 SQLite) |
 | 向量搜索 | Cloudflare Vectorize (1024维, cosine) |
 | 嵌入模型 | `@cf/baai/bge-m3` (多语言) |
 | 文本生成 | 可在设置页面切换，默认 `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
+| 定时任务 | Cron Triggers，每月自动归档用量统计 |
 
 ## 核心功能
 
@@ -60,74 +63,36 @@
 
 ## 部署
 
-### 前置要求
+数据库建表由应用内完成（`POST /api/init`，表结构唯一来源是 `worker/routes/system.ts`），升级用量统计也由 Cron 自动归档——部署和维护全程不需要在本地执行数据库命令。三种部署方式任选：
 
-- [Node.js](https://nodejs.org/) >= 20
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) (`npm install -g wrangler`)
-- Cloudflare 账号（免费即可）
+### 方式一：一键部署（推荐）
 
-### 第一步：登录 Cloudflare
+点击 README 顶部的 **Deploy to Cloudflare** 按钮：
+
+1. Cloudflare 会把仓库克隆到你自己的 GitHub/GitLab 账号，并接好自动构建（以后 push 即部署）
+2. **D1 数据库和 Vectorize 索引会自动创建并绑定**，新资源 ID 自动写入你仓库副本的 `wrangler.toml`——无需修改任何文件
+3. 部署向导中按提示填写 `JWT_SECRET`（随机字符串即可）
+4. 访问站点，按引导完成初始化：建表 → 创建账户 → 进入主界面
+
+### 方式二：仪表盘连接 Git
+
+1. Fork 本仓库，在 Cloudflare 仪表盘 Workers 页面选择「连接 Git 仓库」（构建命令 `npm run build`，部署命令 `npx wrangler deploy`）
+2. 仪表盘中创建 D1 数据库 `cfnote-db`，把它的 `database_id` 改到 `wrangler.toml`（唯一需要改动的一行）
+3. 仪表盘中创建 Vectorize 索引 `cfnote-index`（1024 维，cosine）
+4. 在 Worker 设置中添加 Secret `JWT_SECRET`（以及可选的 `CF_API_TOKEN` / `CF_ACCOUNT_ID`）
+5. 访问站点，按引导完成初始化
+
+### 方式三：本地 CLI
 
 ```bash
 wrangler login
-```
-
-浏览器会打开授权页面，点击允许即可。
-
-### 第二步：创建云端资源
-
-```bash
-# 创建 D1 数据库
-wrangler d1 create cfnote-db
-```
-
-命令输出会包含 `database_id`，将其填入 `wrangler.toml`：
-
-```toml
-[[d1_databases]]
-binding = "DB"
-database_name = "cfnote-db"
-database_id = "<这里替换为实际的 database_id>"
-```
-
-```bash
-# 创建 Vectorize 向量索引
+wrangler d1 create cfnote-db          # 输出的 database_id 填入 wrangler.toml
 wrangler vectorize create cfnote-index --dimensions=1024 --metric=cosine
+wrangler secret put JWT_SECRET
+npm install && npm run deploy
 ```
 
-```bash
-# 设置 JWT 密钥（输入一个随机字符串作为密钥）
-wrangler pages secret put JWT_SECRET
-```
-
-### 第三步：安装依赖并部署
-
-```bash
-npm install
-npm run deploy
-```
-
-`npm run deploy` 会依次执行 TypeScript 编译 → Vite 构建 → 部署到 Cloudflare Pages。
-
-部署成功后会输出访问地址（形如 `https://cfnote.pages.dev`）。
-
-### 第四步：首次访问
-
-打开部署地址，系统会自动检测到未初始化状态，引导你完成：
-
-1. 点击「初始化系统」—— 自动创建数据库表
-2. 填写用户名和密码 —— 创建管理员账户
-3. 自动登录进入主界面
-
-### 网页端部署（无需本地 CLI）
-
-数据库建表由应用内完成（`/api/init`，表结构唯一来源是 `functions/api/init.ts`），因此也可以完全通过 Cloudflare 仪表盘部署：
-
-1. Fork 本仓库，在 Pages 中选择「连接到 Git」创建项目（构建命令 `npm run build`，输出目录 `dist`）
-2. 仪表盘中创建 D1 数据库 `cfnote-db`，把它的 `database_id` 改到 `wrangler.toml`（一行改动，随仓库提交）
-3. 仪表盘中创建 Vectorize 索引 `cfnote-index`（1024 维，cosine）
-4. 在 Pages 项目设置中添加 Secret `JWT_SECRET`（以及可选的 `CF_API_TOKEN` / `CF_ACCOUNT_ID`）
-5. 访问站点，按引导完成初始化——建表自动执行
+部署成功后输出访问地址（形如 `https://cfnote.<你的子域>.workers.dev`），首次访问按引导初始化即可。
 
 ## 统计仪表盘
 
@@ -290,7 +255,7 @@ AE 数据点结构：`blobs = [action, model, userId]`，`doubles = [1]`，`inde
 
 ### 数据归档
 
-AE 数据只保留 90 天。`POST /api/stats/archive` 会把归档边界之后所有**已完成的月份**（截至上个月）逐月汇总写入 D1 `usage_archive` 表，并推进边界：
+AE 数据只保留 90 天。**系统每月 2 日自动归档**（Cron Trigger，见 `worker/archive.ts`）：把归档边界之后所有已完成的月份逐月汇总写入 D1 `usage_archive` 表并推进边界，结果记录在系统日志中。也可以随时手动触发：
 
 ```bash
 curl -X POST https://your-site/api/stats/archive -H "Authorization: Bearer <token>"
@@ -298,7 +263,7 @@ curl -X POST https://your-site/api/stats/archive -H "Authorization: Bearer <toke
 
 - 归档按月顺序推进，每个月的数据行与边界更新在同一个 D1 事务中原子提交，中途失败后重跑不会重复计数
 - `/api/stats` 的累计值 = AE 边界之后的数据 + `usage_archive` 归档值，因此归档前后累计数保持一致，不会双重计算
-- 建议每月初调用一次（Pages 无定时触发器，可用外部 cron 或手动触发）；只要归档间隔不超过 90 天就不会丢数据
+- 未配置 `CF_API_TOKEN` / `CF_ACCOUNT_ID` 时，自动归档静默跳过
 
 ## 设置
 
@@ -345,7 +310,7 @@ npm run build    # 首次需要先构建一次
 npm run dev
 ```
 
-`npm run dev` 同时启动 Vite 前端（端口 5173，支持 HMR）和 Wrangler 后端（端口 8788）。Vite 自动将 `/api/*` 请求代理到 Wrangler。浏览器访问 `http://localhost:5173`。
+`npm run dev` 同时启动 Vite 前端（端口 5173，支持 HMR）和 Wrangler 后端（`wrangler dev`，端口 8788）。Vite 自动将 `/api/*` 请求代理到 Wrangler。浏览器访问 `http://localhost:5173`。
 
 本地环境变量通过项目根目录的 `.dev.vars` 文件配置（已在 `.gitignore` 中）：
 
@@ -371,7 +336,7 @@ npm run build
 npm run preview
 ```
 
-`npm run preview` 执行 `wrangler pages dev dist`，在本地模拟完整的 Cloudflare Pages 环境。默认地址 `http://localhost:8788`。
+`npm run preview` 执行 `wrangler dev`，在本地完整模拟 Worker + 静态资源环境（含 SPA 回退）。默认地址 `http://localhost:8787`。测试月度归档 Cron 可运行 `wrangler dev --test-scheduled` 后访问 `curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=47+2+2+*+*"`。
 
 ### 类型检查
 
@@ -386,7 +351,7 @@ npm test          # 单次运行
 npm run test:watch  # 监听模式
 ```
 
-用 Vitest 覆盖 `functions/api/_utils.ts` 中的纯函数（分块、JWT、密码哈希、内容哈希、think 标签清理、模型白名单、超时保护、AE 埋点结构），用例在 `tests/utils.test.ts`，无需任何 Cloudflare 环境即可运行。
+用 Vitest 覆盖 `worker/utils.ts` 中的纯函数（分块、JWT、密码哈希、内容哈希、think 标签清理、模型白名单、超时保护、AE 埋点结构），用例在 `tests/utils.test.ts`，无需任何 Cloudflare 环境即可运行。
 
 ### 构建
 
@@ -400,36 +365,19 @@ npm run build
 
 ```
 cfnote/
-├── functions/                  # 后端 Pages Functions
-│   ├── api/
-│   │   ├── _middleware.ts      # JWT 认证中间件
-│   │   ├── _utils.ts          # 工具函数（JWT/哈希/分块/模型管理）
-│   │   ├── status.ts          # GET  /api/status
-│   │   ├── init.ts            # POST /api/init（建表，表结构唯一来源）
-│   │   ├── settings.ts        # GET/PUT /api/settings（模型设置）
-│   │   ├── auth/
-│   │   │   ├── register.ts    # POST /api/auth/register
-│   │   │   └── login.ts       # POST /api/auth/login
-│   │   ├── notebooks/
-│   │   │   ├── index.ts       # GET/POST /api/notebooks
-│   │   │   ├── [id].ts        # PUT/DELETE /api/notebooks/:id
-│   │   │   └── [id]/
-│   │   │       └── articles.ts # GET /api/notebooks/:id/articles
-│   │   ├── stats.ts           # GET  /api/stats（统计仪表盘，数据来自 AE + 归档）
-│   │   ├── stats/
-│   │   │   └── archive.ts     # POST /api/stats/archive（AE 数据归档到 D1）
-│   │   ├── articles/
-│   │   │   ├── index.ts       # POST /api/articles（含向量化）
-│   │   │   ├── import.ts      # POST /api/articles/import（URL导入）
-│   │   │   └── [id].ts        # GET/PUT/DELETE /api/articles/:id
-│   │   ├── search/
-│   │   │   ├── index.ts       # POST /api/search（语义搜索）
-│   │   │   └── ai.ts          # POST /api/search/ai（AI问答）
-│   │   └── conversations/
-│   │       ├── index.ts       # GET/POST /api/conversations
-│   │       └── [id].ts        # GET/DELETE /api/conversations/:id
-│   │       └── [id]/
-│   │           └── messages.ts # POST /api/conversations/:id/messages
+├── worker/                     # 后端 Worker（Hono）
+│   ├── index.ts                # 入口：认证中间件 + 路由挂载 + scheduled 导出
+│   ├── types.ts                # Hono 应用环境类型
+│   ├── utils.ts                # 工具函数（JWT/哈希/分块/模型/AE/Jina）
+│   ├── archive.ts              # 用量归档（POST /api/stats/archive 与月度 Cron 共用）
+│   └── routes/
+│       ├── system.ts           # /api/status、/api/init（表结构唯一来源）、/api/settings、/api/system-logs
+│       ├── auth.ts             # /api/auth/register、/api/auth/login
+│       ├── notebooks.ts        # /api/notebooks CRUD + /api/notebooks/:id/articles
+│       ├── articles.ts         # /api/articles 增删改查 + /import（含向量化）
+│       ├── search.ts           # /api/search（语义搜索）、/api/search/ai（AI问答）
+│       ├── conversations.ts    # /api/conversations 及消息（AI 对话 + 联网搜索）
+│       └── stats.ts            # /api/stats（统计仪表盘）、/api/stats/archive
 ├── src/                        # 前端 React SPA
 │   ├── components/
 │   │   ├── SetupPage.tsx      # 初始化 + 注册引导
@@ -450,7 +398,8 @@ cfnote/
 │   ├── App.tsx                # 应用入口 + 路由
 │   ├── main.tsx               # React 挂载
 │   └── index.css              # Tailwind 入口
-├── wrangler.toml               # Cloudflare 绑定配置
+├── tests/                      # Vitest 单元测试
+├── wrangler.toml               # Worker 入口 + 静态资源 + Cron + 绑定配置
 ├── vite.config.ts
 ├── tsconfig.json
 └── package.json

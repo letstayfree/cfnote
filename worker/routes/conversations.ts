@@ -1,5 +1,8 @@
-import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags, logSystem, jinaSearch, trackEvent } from '../../_utils'
-import type { Env } from '../../../../src/types'
+import { Hono } from 'hono'
+import { ok, err, ragSearch, withTimeout, getSettingValue, DEFAULT_MODEL, isReasoningModel, stripThinkTags, logSystem, jinaSearch, trackEvent, type RagSource } from '../utils'
+import type { AppEnv } from '../types'
+
+export const conversations = new Hono<AppEnv>()
 
 const WEB_SEARCH_TAG = '[WEB_SEARCH]'
 
@@ -36,37 +39,116 @@ const WEB_SEARCH_SUMMARY_PROMPT = [
   '- 用中文回答。',
 ].join('\n')
 
+// GET /api/conversations - List conversations
+conversations.get('/', async (c) => {
+  const user = c.get('user')
+  try {
+    const rows = await c.env.DB.prepare(
+      'SELECT * FROM conversations WHERE user_id = ? ORDER BY updated_at DESC LIMIT 50'
+    ).bind(user.id).all()
+    return ok(rows.results)
+  } catch (e: any) {
+    return err('获取对话列表失败: ' + e.message, 500)
+  }
+})
+
+// POST /api/conversations - Create new conversation
+conversations.post('/', async (c) => {
+  const user = c.get('user')
+  try {
+    const result = await c.env.DB.prepare(
+      'INSERT INTO conversations (user_id) VALUES (?)'
+    ).bind(user.id).run()
+
+    const conversation = await c.env.DB.prepare(
+      'SELECT * FROM conversations WHERE id = ?'
+    ).bind(result.meta.last_row_id).first()
+
+    return ok(conversation)
+  } catch (e: any) {
+    return err('创建对话失败: ' + e.message, 500)
+  }
+})
+
+// GET /api/conversations/:id - Get conversation with messages
+conversations.get('/:id', async (c) => {
+  const user = c.get('user')
+  const id = Number(c.req.param('id'))
+  try {
+    const conversation = await c.env.DB.prepare(
+      'SELECT * FROM conversations WHERE id = ? AND user_id = ?'
+    ).bind(id, user.id).first()
+
+    if (!conversation) return err('对话不存在', 404)
+
+    const rows = await c.env.DB.prepare(
+      'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
+    ).bind(id).all()
+
+    const messages = rows.results.map((m: any) => ({
+      ...m,
+      sources: m.sources ? JSON.parse(m.sources) : null,
+    }))
+
+    return ok({ conversation, messages })
+  } catch (e: any) {
+    return err('获取对话失败: ' + e.message, 500)
+  }
+})
+
+// DELETE /api/conversations/:id - Delete conversation
+conversations.delete('/:id', async (c) => {
+  const user = c.get('user')
+  const id = Number(c.req.param('id'))
+  try {
+    const conversation = await c.env.DB.prepare(
+      'SELECT id FROM conversations WHERE id = ? AND user_id = ?'
+    ).bind(id, user.id).first()
+
+    if (!conversation) return err('对话不存在', 404)
+
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM messages WHERE conversation_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM conversations WHERE id = ?').bind(id),
+    ])
+
+    return ok()
+  } catch (e: any) {
+    return err('删除对话失败: ' + e.message, 500)
+  }
+})
+
 // POST /api/conversations/:id/messages - Send message and get AI response
-export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, data }) => {
-  const user = (data as any).user
-  const conversationId = Number(params.id)
+conversations.post('/:id/messages', async (c) => {
+  const user = c.get('user')
+  const conversationId = Number(c.req.param('id'))
 
   try {
-    const { content } = await request.json<{ content: string }>()
+    const { content } = await c.req.json<{ content: string }>()
     if (!content?.trim()) return err('消息内容不能为空')
 
     // 1. Verify conversation belongs to user
-    const conversation = await env.DB.prepare(
+    const conversation = await c.env.DB.prepare(
       'SELECT * FROM conversations WHERE id = ? AND user_id = ?'
     ).bind(conversationId, user.id).first<any>()
 
     if (!conversation) return err('对话不存在', 404)
 
     // 2. Insert user message + update conversation.updated_at
-    const userMsgResult = await env.DB.prepare(
+    const userMsgResult = await c.env.DB.prepare(
       'INSERT INTO messages (conversation_id, role, content) VALUES (?, ?, ?)'
     ).bind(conversationId, 'user', content.trim()).run()
 
-    await env.DB.prepare(
+    await c.env.DB.prepare(
       "UPDATE conversations SET updated_at = datetime('now') WHERE id = ?"
     ).bind(conversationId).run()
 
-    const userMessage = await env.DB.prepare(
+    const userMessage = await c.env.DB.prepare(
       'SELECT * FROM messages WHERE id = ?'
     ).bind(userMsgResult.meta.last_row_id).first<any>()
 
     // 3. Load recent history (last 6 messages = 3 rounds)
-    const historyRows = await env.DB.prepare(
+    const historyRows = await c.env.DB.prepare(
       'SELECT role, content FROM messages WHERE conversation_id = ? AND id != ? ORDER BY created_at DESC LIMIT 6'
     ).bind(conversationId, userMsgResult.meta.last_row_id).all()
 
@@ -77,11 +159,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
 
     // 4. RAG search (skip for short follow-ups)
     let contextParts: string[] = []
-    let sources: import('../../_utils').RagSource[] = []
+    let sources: RagSource[] = []
 
     const isFollowUp = content.trim().length <= 6 && history.length > 0
     if (!isFollowUp) {
-      const rag = await ragSearch(env, content.trim(), user.id, 5)
+      const rag = await ragSearch(c.env, content.trim(), user.id, 5)
       contextParts = rag.contextParts
       sources = rag.sources
     }
@@ -96,10 +178,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
       userPrompt = `（知识库中未找到相关参考内容）\n\n问题: ${content.trim()}`
     }
 
-    const modelId = await getSettingValue(env, 'llm_model', DEFAULT_MODEL)
+    const modelId = await getSettingValue(c.env, 'llm_model', DEFAULT_MODEL)
 
     const firstResult: any = await withTimeout(
-      env.AI.run(modelId as any, {
+      c.env.AI.run(modelId as any, {
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           ...history,
@@ -126,7 +208,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
         isWebSearchResponse = true
         try {
           const results = await withTimeout(
-            jinaSearch(env, webQuery),
+            jinaSearch(c.env, webQuery),
             30000, '联网搜索',
           )
 
@@ -138,7 +220,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
 
             // Second LLM call — summarize search results
             const secondResult: any = await withTimeout(
-              env.AI.run(modelId as any, {
+              c.env.AI.run(modelId as any, {
                 messages: [
                   { role: 'system', content: WEB_SEARCH_SUMMARY_PROMPT },
                   { role: 'user', content: `网络搜索结果:\n${searchContext}\n\n用户原始问题: ${content.trim()}` },
@@ -156,14 +238,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
             assistantContent = '联网搜索未找到相关结果。'
           }
         } catch (e: any) {
-          logSystem(env, 'error', 'web_search', '联网搜索失败', { error: e.message, query: webQuery })
+          logSystem(c.env, 'error', 'web_search', '联网搜索失败', { error: e.message, query: webQuery })
           assistantContent = `联网搜索失败：${e.message}`
         }
       }
     }
 
     // 7. Insert assistant message
-    const assistantMsgResult = await env.DB.prepare(
+    const assistantMsgResult = await c.env.DB.prepare(
       'INSERT INTO messages (conversation_id, role, content, sources) VALUES (?, ?, ?, ?)'
     ).bind(
       conversationId,
@@ -172,19 +254,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
       sources.length > 0 && !isWebSearchResponse ? JSON.stringify(sources) : null,
     ).run()
 
-    const assistantMessage = await env.DB.prepare(
+    const assistantMessage = await c.env.DB.prepare(
       'SELECT * FROM messages WHERE id = ?'
     ).bind(assistantMsgResult.meta.last_row_id).first<any>()
 
     // 8. Auto-update title on first user message
     let titleUpdated: string | undefined
-    const msgCount = await env.DB.prepare(
+    const msgCount = await c.env.DB.prepare(
       'SELECT COUNT(*) as cnt FROM messages WHERE conversation_id = ? AND role = ?'
     ).bind(conversationId, 'user').first<{ cnt: number }>()
 
     if (msgCount && msgCount.cnt === 1) {
       const newTitle = content.trim().slice(0, 50)
-      await env.DB.prepare(
+      await c.env.DB.prepare(
         'UPDATE conversations SET title = ? WHERE id = ?'
       ).bind(newTitle, conversationId).run()
       titleUpdated = newTitle
@@ -192,7 +274,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
 
     // 9. Fire-and-forget usage tracking
     const action = isWebSearchResponse ? 'web_search' : 'ai_chat'
-    trackEvent(env, action, user.id, modelId)
+    trackEvent(c.env, action, user.id, modelId)
 
     // 10. Return both messages
     return ok({
@@ -207,4 +289,4 @@ export const onRequestPost: PagesFunction<Env> = async ({ params, request, env, 
   } catch (e: any) {
     return err('发送消息失败: ' + e.message, 500)
   }
-}
+})
