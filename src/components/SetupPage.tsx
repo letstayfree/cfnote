@@ -2,9 +2,10 @@ import { useState } from 'react'
 
 interface Props {
   onComplete: (token: string, username: string) => void
+  jwtMissing?: boolean
 }
 
-export default function SetupPage({ onComplete }: Props) {
+export default function SetupPage({ onComplete, jwtMissing }: Props) {
   const [step, setStep] = useState<'welcome' | 'init' | 'register'>('welcome')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -73,6 +74,14 @@ export default function SetupPage({ onComplete }: Props) {
           <h1 className="text-2xl font-bold text-gray-900">CFNote</h1>
           <p className="text-gray-500 mt-1">私人知识库</p>
         </div>
+
+        {jwtMissing && (
+          <div className="mb-4 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+            服务端未配置 <b>JWT_SECRET</b>，注册后将无法登录。请在 Cloudflare 仪表盘打开当前 Worker 的
+            <b> Settings → Variables and Secrets</b>，添加名为 <b>JWT_SECRET</b> 的变量（类型选
+            <b> Secret</b>，值为任意随机字符串），保存后刷新本页面。
+          </div>
+        )}
 
         {step === 'welcome' && (
           <div className="text-center">

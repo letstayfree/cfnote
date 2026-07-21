@@ -103,17 +103,19 @@ CREATE TABLE IF NOT EXISTS usage_archive (
 
 // GET /api/status - Check if system is initialized
 system.get('/status', async (c) => {
+  // jwt_secret_configured 仅暴露"是否已配置"布尔值,用于部署自检,不泄露任何密钥信息
+  const jwtOk = !!c.env.JWT_SECRET
   try {
     const result = await c.env.DB.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
     ).first()
     if (!result) {
-      return ok({ initialized: false, hasUser: false })
+      return ok({ initialized: false, hasUser: false, jwt_secret_configured: jwtOk })
     }
     const userCount = await c.env.DB.prepare('SELECT COUNT(*) as count FROM users').first<{ count: number }>()
-    return ok({ initialized: true, hasUser: (userCount?.count ?? 0) > 0 })
+    return ok({ initialized: true, hasUser: (userCount?.count ?? 0) > 0, jwt_secret_configured: jwtOk })
   } catch {
-    return ok({ initialized: false, hasUser: false })
+    return ok({ initialized: false, hasUser: false, jwt_secret_configured: jwtOk })
   }
 })
 

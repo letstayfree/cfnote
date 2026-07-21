@@ -9,6 +9,7 @@ type AppState = 'loading' | 'setup' | 'login' | 'app'
 export default function App() {
   const { token, username, isLoggedIn, login, logout } = useAuth()
   const [state, setState] = useState<AppState>('loading')
+  const [jwtMissing, setJwtMissing] = useState(false)
 
   useEffect(() => {
     checkStatus()
@@ -23,6 +24,7 @@ export default function App() {
     try {
       const res = await fetch('/api/status')
       const json = await res.json() as any
+      if (json.ok && json.data?.jwt_secret_configured === false) setJwtMissing(true)
       if (!json.ok || !json.data?.initialized || !json.data?.hasUser) {
         setState('setup')
       } else if (isLoggedIn) {
@@ -55,8 +57,8 @@ export default function App() {
     )
   }
 
-  if (state === 'setup') return <SetupPage onComplete={handleSetupComplete} />
-  if (state === 'login') return <LoginPage onLogin={(t, u) => { login(t, u); setState('app') }} />
+  if (state === 'setup') return <SetupPage onComplete={handleSetupComplete} jwtMissing={jwtMissing} />
+  if (state === 'login') return <LoginPage onLogin={(t, u) => { login(t, u); setState('app') }} jwtMissing={jwtMissing} />
 
   return <Layout token={token!} username={username!} onLogout={() => { logout(); setState('login') }} />
 }

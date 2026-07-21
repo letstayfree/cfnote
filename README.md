@@ -334,7 +334,7 @@ JWT_SECRET=your-local-dev-secret
 
 线上部署问题：
 
-- **登录提示 `JWT_SECRET 未配置`**：Worker 运行时读不到该变量。依次检查：① 配置位置必须是 Worker 的 **Settings → Variables and Secrets**（运行时变量），不是构建（Build）设置里的环境变量；② 类型选 **Secret**——仪表盘手工添加的 Text 类型变量在旧版本（未设置 `keep_vars` 时）会被下一次 push 部署清除，Secret 类型永不受影响，当前版本已设置 `keep_vars = true`，两种类型都会保留；③ 如果账号里有多个类似 Worker（反复部署产生），确认改的是当前访问域名对应的那个。添加保存后立即生效，无需重新构建，直接重试登录。
+- **登录提示 `JWT_SECRET 未配置`**：Worker 运行时读不到该变量。浏览器直接访问 `https://你的域名/api/status`，看 `jwt_secret_configured` 字段——为 `false` 说明**当前访问的这个 Worker** 确实没读到（登录页/初始化页也会显示黄色警告条）。依次检查：① 配置位置必须是 Worker 的 **Settings → Variables and Secrets**（运行时变量），不是构建（Build）设置里的环境变量；② 类型选 **Secret**——仪表盘手工添加的 Text 类型变量在旧版本（未设置 `keep_vars` 时）会被下一次 push 部署清除，Secret 类型永不受影响，当前版本已设置 `keep_vars = true`，两种类型都会保留；③ 如果账号里有多个类似 Worker（反复部署产生），确认改的是当前访问域名对应的那个。添加保存后立即生效，无需重新构建，刷新 `/api/status` 应变为 `true`。
 
 本地开发需要 `wrangler login`（AI 绑定要建立远程连接会话）；线上部署与维护不依赖本地 CLI。
 
