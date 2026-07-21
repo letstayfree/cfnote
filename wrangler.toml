@@ -1,6 +1,8 @@
 name = "cfnote"
 main = "worker/index.ts"
 compatibility_date = "2024-12-01"
+workers_dev = true    # 发布到 cfnote.<子域>.workers.dev
+preview_urls = false  # 不为每个版本生成预览 URL
 
 # 静态资源:非 /api 请求直接由平台服务(免费不限量),未命中路径回退到 SPA 入口
 [assets]
